@@ -1,0 +1,6 @@
+__pycache__/
+.vscode/
+config.ini
+scanned_files.json
+mailbox_emails.json
+msal*

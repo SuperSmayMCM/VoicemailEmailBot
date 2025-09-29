@@ -27,9 +27,12 @@
 </head>
 <body>
     <div class="container">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
             <h1>Voicemail Email Configuration</h1>
-            <a href="/logout" class="button" style="background-color: #6c757d;">Logout</a>
+            <div>
+                <a href="/logs" class="button" style="background-color: #17a2b8;">View Logs</a>
+                <a href="/logout" class="button" style="background-color: #6c757d;">Logout</a>
+            </div>
         </div>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -40,7 +43,38 @@
             {% endif %}
         {% endwith %}
 
+        <div class="form-section">
+            <h2>Scheduler Control</h2>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <form action="/toggle_scheduler" method="post" style="display: inline;">
+                    {% if scheduler_running %}
+                        <input type="hidden" name="action" value="stop">
+                        <button type="submit" class="button" style="background-color: #dc3545;">Stop Scheduler</button>
+                    {% else %}
+                        <input type="hidden" name="action" value="start">
+                        <button type="submit" class="button" style="background-color: #28a745;">Start Scheduler</button>
+                    {% endif %}
+                </form>
+                <form action="/run_now" method="post" style="display: inline;">
+                    <button type="submit" class="button">Run Script Now</button>
+                </form>
+                <p style="margin: 0;">Status: <strong style="color: {{ 'green' if scheduler_running else 'red' }};">{{ 'Running' if scheduler_running else 'Stopped' }}</strong></p>
+            </div>
+        </div>
+
         <form action="/save" method="post">
+            <div class="form-section">
+                <h2>General Settings</h2>
+                <div class="form-group">
+                    <label for="scheduler_interval">Run Interval (minutes)</label>
+                    <input type="number" id="scheduler_interval" name="scheduler_interval" value="{{ config.SCHEDULER.interval_minutes | default(15) }}" min="1">
+                </div>
+                <div class="form-group">
+                    <label for="scheduler_enabled_at_startup">Enable Scheduler on Startup</label>
+                    <input type="checkbox" id="scheduler_enabled_at_startup" name="scheduler_enabled_at_startup" {% if config.SCHEDULER.scheduler_enabled_at_startup == 'True' %}checked{% endif %}>
+                </div>
+            </div>
+
             <div class="form-section">
                 <h2>Web Interface Credentials</h2>
                 <div class="form-group">
@@ -120,6 +154,8 @@
             <button type="submit" class="button">Save All Settings</button>
         </form>
     </div>
+
+    <p>Vibe coded with ❤️ by Smay. I have no idea how it works but it does. Thanks Gemini!</p>
 
     <script>
         function removeMailbox(entryId) {

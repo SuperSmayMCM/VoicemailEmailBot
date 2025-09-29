@@ -11,9 +11,10 @@ import base64, json
 import subprocess
 import shutil
 import whisper
+import concurrent.futures
 
 SCANNED_FILES_JSON_PATH = 'scanned_files.json'
-WHISPER_MODEL = 'medium'  # Change to desired model size: tiny, base, small, medium, large
+WHISPER_MODEL = 'small'  # Change to desired model size: tiny, base, small, medium, large
 
 # --- Configuration Loader ---
 def load_config():
@@ -141,40 +142,43 @@ def convert_ulaw_to_mp3(ulaw_path, output_path) -> bool:
         return False
 
 # --- Transcription Module ---
-def transcribe_audio_whisper(model: whisper.Whisper, audio_path: str) -> str:
+def transcribe_audio_whisper(model: whisper.Whisper, audio_path: str, timeout: float) -> str:
     """
-    Transcribes an audio file using the Whisper model.
+    Transcribes an audio file using the Whisper model with a 5-minute timeout.
 
     Args:
         model (whisper.Whisper): The Whisper model instance to use.
         audio_path (str): The path to the audio file to transcribe.
+        timeout (float): The maximum time in seconds to allow for transcription.
 
     Returns:
-        str: The transcribed text.
+        str: The transcribed text, or an empty string if it times out or fails.
     """
     print("Attempting to transcribe audio with Whisper...")
-    try:
-        result = model.transcribe(audio_path, fp16=False)  # Disable fp16 because the CPU can't usually do it, and this avoids warnings
-        print("Transcription successful.")
-        return str(result['text'])
-    except Exception as e:
-        print(f"Whisper transcription failed: {e}")
-        return ""
+    
+    def transcribe():
+        return model.transcribe(audio_path, fp16=False)
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future = executor.submit(transcribe)
+        try:
+            result = future.result(timeout=timeout)
+            print("Transcription successful.")
+            return str(result['text'])
+        except concurrent.futures.TimeoutError:
+            print(f"Whisper transcription timed out after {timeout} seconds.")
+            return ""
+        except Exception as e:
+            print(f"Whisper transcription failed: {e}")
+            return ""
 
 # --- Email Sender Module ---
-def send_voicemail_email(access_token, sender_address, recipient, mailbox, timestamp, attachment_path, whisper_model=None):
+def send_voicemail_email(access_token, sender_address, recipient, mailbox, timestamp, attachment_path, transcription=None):
     """Sends an email with a new voicemail attachment using Microsoft Graph sendMail.
     """
     try:
         # Build message
         subject = f"New Voicemail from Mailbox {mailbox}"
-        
-
-    
-        # Transcribe audio
-        transcription = ""
-        if whisper_model:
-            transcription = transcribe_audio_whisper(whisper_model, attachment_path)
 
         # Build HTML body
         body_content = f"""
@@ -289,9 +293,15 @@ def send_all_emails(new_files_found, config, access_token, ftp):
             
             mp3_path = local_path.replace('temp_', '') + '.mp3'
             if convert_ulaw_to_mp3(local_path, mp3_path):
+
+                # Transcribe audio
+                transcription = ""
+                if whisper_model:
+                    transcription = transcribe_audio_whisper(whisper_model, mp3_path, timeout=300)  # 5 minutes timeout
+
                 for recipient in recipients:
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    send_voicemail_email(access_token, config['O365']['sender_address'], recipient, mailbox, timestamp, mp3_path, whisper_model=whisper_model)
+                    send_voicemail_email(access_token, config['O365']['sender_address'], recipient, mailbox, timestamp, mp3_path, transcription=transcription)
 
             os.remove(local_path)
             if os.path.exists(mp3_path):

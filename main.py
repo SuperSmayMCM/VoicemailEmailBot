@@ -7,12 +7,13 @@ import msal
 import requests
 import base64
 import mimetypes
-from pydub import AudioSegment
 import base64, json
 import subprocess
 import shutil
+import whisper
 
 SCANNED_FILES_JSON_PATH = 'scanned_files.json'
+WHISPER_MODEL = 'medium'  # Change to desired model size: tiny, base, small, medium, large
 
 # --- Configuration Loader ---
 def load_config():
@@ -111,9 +112,7 @@ def convert_ulaw_to_mp3(ulaw_path, output_path) -> bool:
         bool: True if the conversion was successful, False otherwise.
     """
     try:
-        
-
-        # Prefer ffmpeg for reliable mu-law decoding (matches Audacity import: U-Law, 8000 Hz, mono)
+        # Prefer ffmpeg for reliable u-law decoding (matches Audacity import: U-Law, 8000 Hz, mono)
         ffmpeg_path = shutil.which('ffmpeg')
         if ffmpeg_path:
             cmd = [
@@ -132,39 +131,87 @@ def convert_ulaw_to_mp3(ulaw_path, output_path) -> bool:
                 return True
             else:
                 print(f"ffmpeg conversion failed (code {proc.returncode}). stderr:\n{proc.stderr}")
-
-        # Fallback: try pydub/ffmpeg via AudioSegment with explicit 'mulaw' format
-        try:
-            audio = AudioSegment.from_file(ulaw_path, format='mulaw', frame_rate=8000, channels=1)
-            audio.export(output_path, format='mp3')
-            print(f"Successfully converted {ulaw_path} to {output_path} using pydub (mulaw)")
-            return True
-        except Exception:
-            # Last-resort: try reading as raw PCM with the parameters Audacity uses
-            audio = AudioSegment.from_file(ulaw_path, format='raw', frame_rate=8000, channels=1, sample_width=1)
-            audio.export(output_path, format='mp3')
-            print(f"Successfully converted {ulaw_path} to {output_path} using pydub (raw fallback)")
-            return True
+                return False
+        else:
+            print("ffmpeg not found in PATH. Please install ffmpeg to enable audio conversion.")
+            return False
 
     except Exception as e:
         print(f"Audio conversion failed: {e}")
         return False
 
-# --- Email Sender Module ---
-def send_voicemail_email(access_token, sender_address, recipient, mailbox, timestamp, attachment_path):
-    """Sends an email with a new voicemail attachment using Microsoft Graph sendMail.
+# --- Transcription Module ---
+def transcribe_audio_whisper(model: whisper.Whisper, audio_path: str) -> str:
+    """
+    Transcribes an audio file using the Whisper model.
 
-    Tries /me/sendMail when possible, otherwise attempts /users/{sender}/sendMail.
+    Args:
+        model (whisper.Whisper): The Whisper model instance to use.
+        audio_path (str): The path to the audio file to transcribe.
+
+    Returns:
+        str: The transcribed text.
+    """
+    print("Attempting to transcribe audio with Whisper...")
+    try:
+        result = model.transcribe(audio_path, fp16=False)  # Disable fp16 because the CPU can't usually do it, and this avoids warnings
+        print("Transcription successful.")
+        return str(result['text'])
+    except Exception as e:
+        print(f"Whisper transcription failed: {e}")
+        return ""
+
+# --- Email Sender Module ---
+def send_voicemail_email(access_token, sender_address, recipient, mailbox, timestamp, attachment_path, whisper_model=None):
+    """Sends an email with a new voicemail attachment using Microsoft Graph sendMail.
     """
     try:
         # Build message
         subject = f"New Voicemail from Mailbox {mailbox}"
-        body_content = (
-            f"You have received a new voicemail.\n\n"
-            f"From: Mailbox {mailbox}\n"
-            f"Time: {timestamp}\n\n"
-            "Please see the attached audio file."
-        )
+        
+
+    
+        # Transcribe audio
+        transcription = ""
+        if whisper_model:
+            transcription = transcribe_audio_whisper(whisper_model, attachment_path)
+
+        # Build HTML body
+        body_content = f"""
+        <html>
+        <head>
+            <style>
+                body {{ font-family: sans-serif; }}
+                .container {{ padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px; }}
+                .header {{ font-size: 1.2em; font-weight: bold; margin-bottom: 10px; }}
+                .info-table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; }}
+                .info-table td {{ padding: 8px; border: 1px solid #ddd; }}
+                .transcription {{ margin-top: 20px; padding: 15px; background-color: #f9f9f9; border: 1px solid #eee; border-radius: 5px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">New Voicemail Received</div>
+                <table class="info-table">
+                    <tr><td><b>From:</b></td><td>Mailbox {mailbox}</td></tr>
+                    <tr><td><b>Time:</b></td><td>{timestamp}</td></tr>
+                </table>
+                <p>Please see the attached audio file for the full message.</p>
+        """
+
+        if transcription:
+            body_content += f"""
+                <div class="transcription">
+                    <b>Transcription:</b>
+                    <p>{transcription}</p>
+                </div>
+            """
+        
+        body_content += """
+            </div>
+        </body>
+        </html>
+        """
 
         # Read and base64-encode attachment
         with open(attachment_path, 'rb') as f:
@@ -183,7 +230,7 @@ def send_voicemail_email(access_token, sender_address, recipient, mailbox, times
 
         message = {
             "subject": subject,
-            "body": {"contentType": "Text", "content": body_content},
+            "body": {"contentType": "HTML", "content": body_content},
             "toRecipients": [{"emailAddress": {"address": recipient}}],
             "attachments": [attachment]
         }
@@ -214,6 +261,14 @@ def send_all_emails(new_files_found, config, access_token, ftp):
 
     mailbox_emails = load_mailbox_emails()
 
+    # Load Whisper model
+    whisper_model = None
+    try:
+        whisper_model = whisper.load_model(WHISPER_MODEL)
+        print("Whisper model loaded.")
+    except Exception as e:
+        print(f"Failed to load Whisper model: {e}")
+
     for mailbox, file_paths in new_files_found.items():
         print(f"Found {len(file_paths)} new file(s) in mailbox {mailbox}.")
 
@@ -236,8 +291,8 @@ def send_all_emails(new_files_found, config, access_token, ftp):
             if convert_ulaw_to_mp3(local_path, mp3_path):
                 for recipient in recipients:
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    send_voicemail_email(access_token, config['O365']['sender_address'], recipient, mailbox, timestamp, mp3_path)
-            
+                    send_voicemail_email(access_token, config['O365']['sender_address'], recipient, mailbox, timestamp, mp3_path, whisper_model=whisper_model)
+
             os.remove(local_path)
             if os.path.exists(mp3_path):
                 os.remove(mp3_path)
@@ -325,7 +380,7 @@ def main():
 
     scanned_files_set = read_scanned_files()
     print(f"Loaded {len(scanned_files_set)} previously scanned files.")
-    
+
     # Find new files since last scan, and collect current files on FTP
     new_files_found, current_files_on_ftp = scan_ftp_folder(ftp, config['FTP']['base_path'], scanned_files_set)
 

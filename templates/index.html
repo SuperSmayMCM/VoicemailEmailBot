@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voicemail Email Config</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f4f4f9; color: #333; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1, h2 { color: #0056b3; }
+        h1 { text-align: center; }
+        form { display: flex; flex-direction: column; gap: 20px; }
+        .form-section { border: 1px solid #ddd; padding: 20px; border-radius: 5px; }
+        .form-group { display: flex; flex-direction: column; gap: 5px; }
+        label { font-weight: bold; }
+        input[type="text"], input[type="password"] { padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 1em; }
+        .button { background-color: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 1em; text-align: center; }
+        .button:hover { background-color: #0056b3; }
+        .flash-success { background-color: #d4edda; color: #155724; padding: 10px; border-radius: 4px; margin-bottom: 20px; text-align: center; }
+        .mailbox-entries { display: flex; flex-direction: column; gap: 15px; }
+        .mailbox-entry { display: grid; grid-template-columns: 1fr 2fr auto; gap: 10px; align-items: center; }
+        .remove-btn { background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+        .remove-btn:hover { background: #c82333; }
+        #add-mailbox-btn { background: #28a745; }
+        #add-mailbox-btn:hover { background: #218838; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h1>Voicemail Email Configuration</h1>
+            <a href="/logout" class="button" style="background-color: #6c757d;">Logout</a>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <form action="/save" method="post">
+            <div class="form-section">
+                <h2>Web Interface Credentials</h2>
+                <div class="form-group">
+                    <label for="web_user">Username</label>
+                    <input type="text" id="web_user" name="web_user" value="{{ config.WEB.user | default('admin') }}">
+                </div>
+                <div class="form-group">
+                    <label for="web_password">New Password (leave blank to keep existing)</label>
+                    <input type="password" id="web_password" name="web_password">
+                </div>
+                <div class="form-group">
+                    <label for="web_password_confirm">Confirm New Password</label>
+                    <input type="password" id="web_password_confirm" name="web_password_confirm">
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h2>Mailbox to Email Mappings</h2>
+                <div id="mailbox-entries" class="mailbox-entries">
+                    {% for mailbox, emails in mailbox_emails.items() %}
+                    <div class="mailbox-entry" id="entry-{{ loop.index0 }}">
+                        <input type="text" name="mailbox_id_{{ loop.index0 }}" value="{{ mailbox }}">
+                        <input type="text" name="emails_{{ loop.index0 }}" value="{{ emails|join(', ') }}" placeholder="comma-separated emails">
+                        <input type="hidden" name="original_mailbox_id_{{ loop.index0 }}" value="{{ mailbox }}">
+                        <button type="button" class="remove-btn" onclick="removeMailbox('entry-{{ loop.index0 }}')">Remove</button>
+                    </div>
+                    {% endfor %}
+                </div>
+                <hr>
+                <h3>Add New Mailbox</h3>
+                <div class="mailbox-entry">
+                     <input type="text" id="new_mailbox_id" name="new_mailbox_id" placeholder="Mailbox ID">
+                     <input type="text" id="new_mailbox_emails" name="new_mailbox_emails" placeholder="comma-separated emails">
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h2>FTP Settings</h2>
+                <div class="form-group">
+                    <label for="ftp_host">Host</label>
+                    <input type="text" id="ftp_host" name="ftp_host" value="{{ config.FTP.host | default('') }}">
+                </div>
+                <div class="form-group">
+                    <label for="ftp_user">User</label>
+                    <input type="text" id="ftp_user" name="ftp_user" value="{{ config.FTP.user | default('') }}">
+                </div>
+                <div class="form-group">
+                    <label for="ftp_password">Password (leave blank to keep existing)</label>
+                    <input type="password" id="ftp_password" name="ftp_password">
+                </div>
+                <div class="form-group">
+                    <label for="ftp_base_path">Base Path</label>
+                    <input type="text" id="ftp_base_path" name="ftp_base_path" value="{{ config.FTP.base_path | default('') }}">
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h2>Office 365 Settings</h2>
+                <div class="form-group">
+                    <label for="o365_sender_address">Sender Email Address</label>
+                    <input type="text" id="o365_sender_address" name="o365_sender_address" value="{{ config.O365.sender_address | default('') }}">
+                </div>
+                <div class="form-group">
+                    <label for="o365_client_id">Client ID</label>
+                    <input type="text" id="o365_client_id" name="o365_client_id" value="{{ config.O365.client_id | default('') }}">
+                </div>
+                <div class="form-group">
+                    <label for="o365_tenant_id">Tenant ID</label>
+                    <input type="text" id="o365_tenant_id" name="o365_tenant_id" value="{{ config.O365.tenant_id | default('') }}">
+                </div>
+                <div class="form-group">
+                    <label for="o365_client_secret">Client Secret (leave blank to keep existing)</label>
+                    <input type="password" id="o365_client_secret" name="o365_client_secret">
+                </div>
+            </div>
+
+            <button type="submit" class="button">Save All Settings</button>
+        </form>
+    </div>
+
+    <script>
+        function removeMailbox(entryId) {
+            const entry = document.getElementById(entryId);
+            if (entry) {
+                entry.remove();
+            }
+        }
+    </script>
+</body>
+</html>

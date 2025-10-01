@@ -1,0 +1,27 @@
+name: FTPVoicemailEmailTest
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - ffmpeg
+  - numpy<2.0
+  - requests
+  - pydub
+  - msal
+  - pytorch>=2.2
+  - tiktoken
+  - numba
+  - llvmlite
+  - regex
+  - tqdm
+  - typing-extensions
+  - filelock
+  - sympy
+  - networkx
+  - jinja2
+  - fsspec
+  - flask
+  - more-itertools
+  - pip
+  - pip:
+      - openai-whisper

@@ -66,7 +66,9 @@ def scan_ftp_folder(ftp_connection, base_path, scanned_files):
         scanned_files: A set of file paths that have already been processed.
         
     Returns:
-        A dictionary mapping mailbox numbers to a list of new file paths and their modified times.
+        A tuple (new_files, current_files) where:
+            new_files: A dict mapping mailbox numbers to lists of new file info dicts.
+            current_files: A set of all file paths currently found on the FTP server.
     """
     new_files = {}
     current_files = set()
@@ -74,9 +76,9 @@ def scan_ftp_folder(ftp_connection, base_path, scanned_files):
         ftp_connection.cwd(base_path)
         mailboxes = ftp_connection.nlst()
         
-        for mailbox in mailboxes:
-            if mailbox.isdigit():
-                mailbox_path = f"{base_path}/{mailbox}"
+        for mailbox_number in mailboxes:
+            if mailbox_number.isdigit():
+                mailbox_path = f"{base_path}/{mailbox_number}"
                 try:
                     lines = []
                     ftp_connection.dir(mailbox_path, lines.append)
@@ -101,9 +103,11 @@ def scan_ftp_folder(ftp_connection, base_path, scanned_files):
                             except ftplib.all_errors:
                                 actual_mod_time = datetime.now()
 
-                            if mailbox not in new_files:
-                                new_files[mailbox] = []
-                            new_files[mailbox].append({'path': full_path, 'modified': actual_mod_time})
+                            # Ensure dict entry exists
+                            if mailbox_number not in new_files:
+                                new_files[mailbox_number] = []
+
+                            new_files[mailbox_number].append({'path': full_path, 'modified': actual_mod_time})
                 except ftplib.error_perm:
                     continue
     except ftplib.all_errors as e:
@@ -273,8 +277,8 @@ def send_voicemail_email(access_token, sender_address, recipient, mailbox, times
     except Exception as e:
         print(f"An error occurred while sending email: {e}")
         return False
-    
-def send_all_emails(new_files_found, config, access_token, ftp):
+
+def process_files(new_files_found, prev_scanned_files, config, access_token, ftp):
 
     mailbox_emails = load_mailbox_emails()
 
@@ -322,6 +326,12 @@ def send_all_emails(new_files_found, config, access_token, ftp):
             if os.path.exists(mp3_path):
                 os.remove(mp3_path)
 
+            # Mark file as processed
+            prev_scanned_files.add(file_path)
+            # Update the scanned files list after each file is processed
+            write_scanned_files(prev_scanned_files)
+
+
 def token_has_mail_send(app_token: str) -> bool:
     try:
         parts = app_token.split('.')
@@ -353,7 +363,19 @@ def token_has_mail_send(app_token: str) -> bool:
 
 # --- Main Execution ---
 def main():
+
+    print("Loading configuration...")
+
     config = load_config()
+   
+    print(f"""
+    Welcome to the Madison Children's Museum Voicemail Emailer!
+        Current configuration status:
+            Sending from {config['O365']['sender_address']}
+            Scanning FTP server {config['FTP']['host']} under path {config['FTP']['base_path']}
+            Using Whisper model: {WHISPER_MODEL}
+
+          """)  
 
     # Use MSAL client credentials flow (application authentication)
     # This requires the app registration to have Microsoft Graph -> Application permissions -> Mail.Send
@@ -369,8 +391,10 @@ def main():
     scopes = ["https://graph.microsoft.com/.default"]
 
     authority = f"https://login.microsoftonline.com/{tenant}"
-    app = msal.ConfidentialClientApplication(client_id=client_id, client_credential=client_secret, authority=authority)
 
+    print("Signing in to Microsoft Graph...")
+
+    app = msal.ConfidentialClientApplication(client_id=client_id, client_credential=client_secret, authority=authority)
     result = app.acquire_token_for_client(scopes=scopes)
 
     if not result or 'access_token' not in result:
@@ -395,6 +419,7 @@ def main():
         return
 
     # FTP connection
+    print(f"Connecting to FTP server {config['FTP']['host']}...")
     try:
         ftp = ftplib.FTP(config['FTP']['host'])
         ftp.login(user=config['FTP']['user'], passwd=config['FTP']['password'])
@@ -403,19 +428,27 @@ def main():
         print(f"Failed to connect to FTP server: {e}")
         return
 
-    scanned_files_set = read_scanned_files()
-    print(f"Loaded {len(scanned_files_set)} previously scanned files.")
+    print("Reading previously scanned files...")
+    previously_scanned_files_set = set()
+    if os.path.exists(SCANNED_FILES_JSON_PATH):
+        previously_scanned_files_set = read_scanned_files()
+        print(f"Loaded {len(previously_scanned_files_set)} previously scanned files.")
+
+    else:
+        print("No previously scanned files found. Initializing assuming all current files have been processed.")
+        # On first run, assume all current files are already processed
+        _, current_files_on_ftp = scan_ftp_folder(ftp, config['FTP']['base_path'], previously_scanned_files_set)
+        previously_scanned_files_set = current_files_on_ftp
+        write_scanned_files(previously_scanned_files_set)
+        print(f"Recorded {len(previously_scanned_files_set)} existing files as processed.")
 
     # Find new files since last scan, and collect current files on FTP
-    new_files_found, current_files_on_ftp = scan_ftp_folder(ftp, config['FTP']['base_path'], scanned_files_set)
+    new_files_found, current_files_on_ftp = scan_ftp_folder(ftp, config['FTP']['base_path'], previously_scanned_files_set)
 
     if not new_files_found:
         print("No new files found.")
     else:
-        send_all_emails(new_files_found, config, access_token, ftp)
-
-    # Update the list of scanned files for the next run
-    write_scanned_files(current_files_on_ftp)
+        process_files(new_files_found, previously_scanned_files_set, config, access_token, ftp)
     
     ftp.quit()
     print("FTP connection closed.")

@@ -328,6 +328,12 @@ def process_files(new_files_found, prev_scanned_files, config, access_token, ftp
             # Update the scanned files list after each file is processed, so if the script is interrupted we don't reprocess files
             write_scanned_files(prev_scanned_files)
 
+    
+def remove_temp_dir():
+    if TEMP_DIR.exists() and TEMP_DIR.is_dir():
+        print("Cleaning up temporary files...")
+        shutil.rmtree(TEMP_DIR)
+
 
 def token_has_mail_send(app_token: str) -> bool:
     try:
@@ -397,6 +403,8 @@ def main():
             Scanning FTP server {config['FTP']['host']} under path {config['FTP']['base_path']}
             Using Whisper model: {WHISPER_MODEL}
 """)  
+    
+    remove_temp_dir()
     
     print("Checking for new files...")
 
@@ -507,6 +515,8 @@ def main():
 
     # Save updated scanned files list
     write_scanned_files(current_files_on_ftp)
+
+    remove_temp_dir()
 
 if __name__ == "__main__":
     main()

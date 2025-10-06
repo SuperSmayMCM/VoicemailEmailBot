@@ -14,6 +14,7 @@ app.secret_key = os.urandom(24)
 
 CONFIG_PATH = 'config.ini'
 MAILBOX_EMAILS_PATH = 'mailbox_emails.json'
+MAIN_SCRIPT = 'voicemail_to_email.py'
 
 # --- Globals for Scheduler ---
 last_run_log = "Scheduler has not run yet."
@@ -26,7 +27,7 @@ def run_main_script():
     """Runs the main.py script and captures its output in real-time."""
     global last_run_log
     if not script_execution_lock.acquire(blocking=False):
-        print("Scheduler: Attempted to run script while it was already running.")
+        print("[Scheduler] Attempted to run script while it was already running.")
         # Log this attempt to the user-visible log
         with log_lock:
             # Use a temporary variable to build the string to avoid repeated lock acquisitions
@@ -36,7 +37,7 @@ def run_main_script():
         return
 
     try:
-        print("Scheduler: Running voicemail_to_email.py script with timeout...")
+        print(f"[Scheduler] Running {MAIN_SCRIPT} script with timeout...")
         
         # Reset log for the new run
         log_output = f"--- Log from {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n"
@@ -46,7 +47,7 @@ def run_main_script():
         try:
             python_executable = sys.executable
             process = subprocess.Popen(
-                [python_executable, 'run_with_timeout.py', '900', python_executable, 'voicemail_to_email.py'], # 15 minutes timeout
+                [python_executable, 'run_with_timeout.py', '900', python_executable, MAIN_SCRIPT], # 15 minutes timeout
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -57,9 +58,10 @@ def run_main_script():
             # Stream stdout
             if process.stdout:
                 for line in iter(process.stdout.readline, ''):
+                    prepend_line = f"[{MAIN_SCRIPT}]"
                     with log_lock:
                         last_run_log += line
-                    print(line, end='') # Also print to server console
+                    print(f"{prepend_line} {line}", end='') # Also print to server console with a prefix
             
             process.wait() # Wait for the process to complete
 
@@ -72,19 +74,19 @@ def run_main_script():
             
             with log_lock:
                 last_run_log += f"\n--- Process finished at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---"
-            print("Scheduler: main.py finished.")
+            print(f"[Scheduler] {MAIN_SCRIPT} finished.")
 
         except Exception as e:
-            error_message = f"--- Scheduler failed to execute main.py at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n{e}"
+            error_message = f"--- Scheduler failed to execute {MAIN_SCRIPT} at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n{e}"
             with log_lock:
                 last_run_log = error_message
-            print(f"Scheduler: Failed to run main.py: {e}")
+            print(f"[Scheduler] Failed to run {MAIN_SCRIPT}: {e}")
     finally:
         script_execution_lock.release()
 
 def scheduler_loop():
     """The background thread that runs the script periodically."""
-    print("Scheduler thread started.")
+    print("[Server] Scheduler thread started.")
     while not stop_scheduler_flag.is_set():
         config = load_config()
         interval_minutes = config.getint('SCHEDULER', 'interval_minutes', fallback=15)
@@ -96,7 +98,7 @@ def scheduler_loop():
             if stop_scheduler_flag.is_set():
                 break
             time.sleep(1)
-    print("Scheduler thread stopped.")
+    print("[Server] Scheduler thread stopped.")
 
 def start_scheduler():
     global scheduler_thread_instance
@@ -104,14 +106,14 @@ def start_scheduler():
         stop_scheduler_flag.clear()
         scheduler_thread_instance = threading.Thread(target=scheduler_loop, daemon=True)
         scheduler_thread_instance.start()
-        print("Scheduler started.")
+        print("[Server] Scheduler started.")
 
 def stop_scheduler():
     global scheduler_thread_instance
     if scheduler_thread_instance and scheduler_thread_instance.is_alive():
         stop_scheduler_flag.set()
         scheduler_thread_instance.join()
-        print("Scheduler stopped.")
+        print("[Server] Scheduler stopped.")
         scheduler_thread_instance = None
 
 # --- Flask Routes ---
@@ -283,17 +285,17 @@ def toggle_scheduler():
 
 if __name__ == '__main__':
 
-    print("Loading configuration...")
+    print("[Server] Loading configuration...")
 
     if not os.path.exists('config.ini'):
-        print("Error: config.ini file not found. The contents of config_template.ini have been copied to config.ini.")
-        print("Please edit config.ini to add your configuration settings, then re-run the script.")
+        print("[Server] Error: config.ini file not found. The contents of config_template.ini have been copied to config.ini.")
+        print("[Server] Please edit config.ini to add your configuration settings, then re-run the script.")
 
         template_path = 'config_template.ini'
         if os.path.exists(template_path):
             shutil.copyfile(template_path, 'config.ini')
         else:
-            print("Error: config_template.ini file not found. Please ensure it exists in the script directory.")
+            print("[Server] Error: config_template.ini file not found. Please ensure it exists in the script directory.")
         
         exit(1)
     

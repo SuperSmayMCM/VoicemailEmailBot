@@ -3,6 +3,7 @@ import ftplib
 import os
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 import msal
 import requests
 import base64
@@ -16,6 +17,7 @@ import concurrent.futures
 SCANNED_FILES_JSON_PATH = 'scanned_files.json'
 WHISPER_MODEL = 'medium'  # Change to desired model size: tiny, base, small, medium, large
 FTP_TIME_OFFSET = timedelta(days=30)
+TEMP_DIR = Path('temp')
 
 # --- Configuration Loader ---
 def load_config(config_path='config.ini') -> configparser.ConfigParser:
@@ -118,13 +120,13 @@ def scan_ftp_folder(ftp_connection, base_path, scanned_files):
     return new_files, current_files
 
 # --- Audio Converter Module ---
-def convert_ulaw_to_mp3(ulaw_path, output_path) -> bool:
+def convert_ulaw_to_mp3(ulaw_path: Path, output_path: Path) -> bool:
     """
     Converts a raw u-law audio file to MP3 using ffmpeg.
 
     Args:
-        ulaw_path (str): The file path to the input u-law audio file.
-        output_path (str): The file path to the output MP3 audio file.
+        ulaw_path (Path): The file path to the input u-law audio file.
+        output_path (Path): The file path to the output MP3 audio file.
 
     Returns:
         bool: True if the conversion was successful, False otherwise.
@@ -139,9 +141,9 @@ def convert_ulaw_to_mp3(ulaw_path, output_path) -> bool:
                 '-f', 'mulaw',
                 '-ar', '8000',
                 '-ac', '1',
-                '-i', ulaw_path,
+                '-i', str(ulaw_path),
                 '-acodec', 'libmp3lame',
-                output_path
+                str(output_path)
             ]
             proc = subprocess.run(cmd, capture_output=True, text=True)
             if proc.returncode == 0:
@@ -291,28 +293,31 @@ def process_files(new_files_found, prev_scanned_files, config, access_token, ftp
             print(f"Warning: No recipients configured for mailbox {mailbox}. Skipping.")
             continue
 
+
         for file_info in file_infos:
             file_path = file_info['path']
             modified_time = file_info['modified']
-            local_path = f"temp_{os.path.basename(file_path)}"
+            TEMP_DIR.mkdir(parents=True, exist_ok=True)
+            local_path = TEMP_DIR / os.path.basename(file_path)  # This syntax is funny but yeah I suppose it works
+
             try:
                 with open(local_path, 'wb') as f:
                     ftp.retrbinary(f"RETR {file_path}", f.write)
             except ftplib.all_errors as e:
                 print(f"Failed to download {file_path}: {e}")
                 continue
-            
-            mp3_path = local_path.replace('temp_', '') + '.mp3'
+
+            mp3_path = TEMP_DIR / f"Mailbox {mailbox} on {modified_time.strftime('%Y-%m-%d at %H-%M-%S')}.mp3"
             if convert_ulaw_to_mp3(local_path, mp3_path):
 
                 # Transcribe audio
                 transcription = ""
                 if whisper_model:
-                    transcription = transcribe_audio_whisper(whisper_model, mp3_path, timeout=300)  # 5 minutes timeout
+                    transcription = transcribe_audio_whisper(whisper_model, str(mp3_path), timeout=300)  # 5 minutes timeout
 
                 for recipient in recipients:
                     timestamp = modified_time.strftime("%B %d, %Y at %I:%M %p")
-                    send_voicemail_email(access_token, config['O365']['sender_address'], recipient, mailbox, timestamp, mp3_path, transcription=transcription)
+                    send_voicemail_email(access_token, config['O365']['sender_address'], recipient, mailbox, timestamp, str(mp3_path), transcription=transcription)
 
             os.remove(local_path)
             if os.path.exists(mp3_path):
@@ -320,7 +325,7 @@ def process_files(new_files_found, prev_scanned_files, config, access_token, ftp
 
             # Mark file as processed
             prev_scanned_files.add(file_path)
-            # Update the scanned files list after each file is processed
+            # Update the scanned files list after each file is processed, so if the script is interrupted we don't reprocess files
             write_scanned_files(prev_scanned_files)
 
 
@@ -355,6 +360,19 @@ def token_has_mail_send(app_token: str) -> bool:
 
 # --- Main Execution ---
 def main():
+    # 1) Load configuration
+    # 2) Connect to FTP and scan for new files
+    # 3) Authenticate to Microsoft Graph
+    # 4) Load Whisper model
+    # 5) For each new file:
+    #    a) Download file
+    #    b) Convert to MP3 (ffmpeg)
+    #    c) Transcribe with Whisper
+    #    d) Send email with attachment and transcription
+    #    e) Clean up local files
+    #    f) Mark file as processed
+    # 6) Save updated scanned files list
+
 
     print("Loading configuration...")
 
@@ -373,12 +391,55 @@ def main():
    
     print(f"""
     Welcome to the Madison Children's Museum Voicemail Emailer!
+          
         Current configuration status:
             Sending from {config['O365']['sender_address']}
             Scanning FTP server {config['FTP']['host']} under path {config['FTP']['base_path']}
             Using Whisper model: {WHISPER_MODEL}
+""")  
+    
+    print("Checking for new files...")
 
-          """)  
+    # FTP connection
+    print(f"Connecting to FTP server {config['FTP']['host']}...")
+    try:
+        ftp = ftplib.FTP(config['FTP']['host'])
+        ftp.login(user=config['FTP']['user'], passwd=config['FTP']['password'])
+        print("Connected to FTP server.")
+    except ftplib.all_errors as e:
+        print(f"Failed to connect to FTP server: {e}")
+        return
+
+    print("Reading previously scanned files...")
+    previously_scanned_files_set = set()
+    if os.path.exists(SCANNED_FILES_JSON_PATH):
+        previously_scanned_files_set = read_scanned_files()
+        print(f"Loaded {len(previously_scanned_files_set)} previously scanned files.")
+
+    else:
+        print("No previously scanned files found. Initializing assuming all current files have been processed.")
+        # On first run, assume all current files are already processed
+        _, current_files_on_ftp = scan_ftp_folder(ftp, config['FTP']['base_path'], previously_scanned_files_set)
+        previously_scanned_files_set = current_files_on_ftp
+        write_scanned_files(previously_scanned_files_set)
+        print(f"Recorded {len(previously_scanned_files_set)} existing files as processed.")
+
+    # Find new files since last scan, and collect current files on FTP
+    new_files_found, current_files_on_ftp = scan_ftp_folder(ftp, config['FTP']['base_path'], previously_scanned_files_set)
+
+    new_file_count = sum(len(files) for files in new_files_found.values())
+    new_mailbox_count = len(new_files_found)
+
+    print(f"Scanned {len(current_files_on_ftp)} total files on FTP server.")
+    print(f"Found {new_mailbox_count} mailbox{'' if new_mailbox_count == 1 else 'es'} with {new_file_count} new file{'' if new_file_count == 1 else 's'}.")
+
+    if not new_files_found:
+        print("No new files found.")
+        ftp.quit()
+        print("FTP connection closed.")
+        print("Scan complete.")
+        return
+
 
     # Use MSAL client credentials flow (application authentication)
     # This requires the app registration to have Microsoft Graph -> Application permissions -> Mail.Send
@@ -423,49 +484,29 @@ def main():
         print("\nAfter an admin grants consent, re-run this script.")
         return
 
-    # FTP connection
-    print(f"Connecting to FTP server {config['FTP']['host']}...")
-    try:
-        ftp = ftplib.FTP(config['FTP']['host'])
-        ftp.login(user=config['FTP']['user'], passwd=config['FTP']['password'])
-        print("Connected to FTP server.")
-    except ftplib.all_errors as e:
-        print(f"Failed to connect to FTP server: {e}")
-        return
-
-    print("Reading previously scanned files...")
-    previously_scanned_files_set = set()
-    if os.path.exists(SCANNED_FILES_JSON_PATH):
-        previously_scanned_files_set = read_scanned_files()
-        print(f"Loaded {len(previously_scanned_files_set)} previously scanned files.")
-
-    else:
-        print("No previously scanned files found. Initializing assuming all current files have been processed.")
-        # On first run, assume all current files are already processed
-        _, current_files_on_ftp = scan_ftp_folder(ftp, config['FTP']['base_path'], previously_scanned_files_set)
-        previously_scanned_files_set = current_files_on_ftp
-        write_scanned_files(previously_scanned_files_set)
-        print(f"Recorded {len(previously_scanned_files_set)} existing files as processed.")
-
-    # Find new files since last scan, and collect current files on FTP
-    new_files_found, current_files_on_ftp = scan_ftp_folder(ftp, config['FTP']['base_path'], previously_scanned_files_set)
+    
 
     # Load Whisper model
     whisper_model = None
     try:
+        print("Loading Whisper model...")
         whisper_model = whisper.load_model(WHISPER_MODEL)
         print("Whisper model loaded.")
     except Exception as e:
         print(f"Failed to load Whisper model: {e}")
+        print("Continuing without transcription.")
 
-    if not new_files_found:
-        print("No new files found.")
-    else:
-        process_files(new_files_found, previously_scanned_files_set, config, access_token, ftp, whisper_model)
-    
+    # Process each new file found
+    print("Processing new files...")
+    process_files(new_files_found, previously_scanned_files_set, config, access_token, ftp, whisper_model=whisper_model)
+
+    # Close FTP connection
     ftp.quit()
     print("FTP connection closed.")
     print("Scan complete.")
+
+    # Save updated scanned files list
+    write_scanned_files(current_files_on_ftp)
 
 if __name__ == "__main__":
     main()

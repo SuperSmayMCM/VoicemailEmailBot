@@ -2,7 +2,7 @@ import configparser
 import ftplib
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import msal
 import requests
 import base64
@@ -15,6 +15,7 @@ import concurrent.futures
 
 SCANNED_FILES_JSON_PATH = 'scanned_files.json'
 WHISPER_MODEL = 'small'  # Change to desired model size: tiny, base, small, medium, large
+FTP_TIME_OFFSET = timedelta(days=30)
 
 # --- Configuration Loader ---
 def load_config():
@@ -65,7 +66,7 @@ def scan_ftp_folder(ftp_connection, base_path, scanned_files):
         scanned_files: A set of file paths that have already been processed.
         
     Returns:
-        A dictionary mapping mailbox numbers to a list of new file paths.
+        A dictionary mapping mailbox numbers to a list of new file paths and their modified times.
     """
     new_files = {}
     current_files = set()
@@ -77,20 +78,32 @@ def scan_ftp_folder(ftp_connection, base_path, scanned_files):
             if mailbox.isdigit():
                 mailbox_path = f"{base_path}/{mailbox}"
                 try:
-                    ftp_connection.cwd(mailbox_path)
-                    files = ftp_connection.nlst()
+                    lines = []
+                    ftp_connection.dir(mailbox_path, lines.append)
                     
-                    for filename in files:
-                        if filename.endswith('.') or filename.endswith('..') or filename == "":
+                    for line in lines:
+                        parts = line.split()
+                        if len(parts) < 9:
+                            continue
+                        
+                        filename = parts[-1]
+                        if filename == '.' or filename == '..':
                             continue
 
                         full_path = f"{mailbox_path}/{filename}"
                         current_files.add(full_path)
                         
                         if full_path not in scanned_files:
+                            try:
+                                mod_time_str = ftp_connection.voidcmd(f"MDTM {full_path}")[4:].strip()
+                                ftp_mod_time = datetime.strptime(mod_time_str, "%Y%m%d%H%M%S")
+                                actual_mod_time = ftp_mod_time + FTP_TIME_OFFSET
+                            except ftplib.all_errors:
+                                actual_mod_time = datetime.now()
+
                             if mailbox not in new_files:
                                 new_files[mailbox] = []
-                            new_files[mailbox].append(full_path)
+                            new_files[mailbox].append({'path': full_path, 'modified': actual_mod_time})
                 except ftplib.error_perm:
                     continue
     except ftplib.all_errors as e:
@@ -273,8 +286,8 @@ def send_all_emails(new_files_found, config, access_token, ftp):
     except Exception as e:
         print(f"Failed to load Whisper model: {e}")
 
-    for mailbox, file_paths in new_files_found.items():
-        print(f"Found {len(file_paths)} new file(s) in mailbox {mailbox}.")
+    for mailbox, file_infos in new_files_found.items():
+        print(f"Found {len(file_infos)} new file(s) in mailbox {mailbox}.")
 
         recipients = mailbox_emails.get(mailbox, [])
         
@@ -282,7 +295,9 @@ def send_all_emails(new_files_found, config, access_token, ftp):
             print(f"Warning: No recipients configured for mailbox {mailbox}. Skipping.")
             continue
 
-        for file_path in file_paths:
+        for file_info in file_infos:
+            file_path = file_info['path']
+            modified_time = file_info['modified']
             local_path = f"temp_{os.path.basename(file_path)}"
             try:
                 with open(local_path, 'wb') as f:
@@ -300,7 +315,7 @@ def send_all_emails(new_files_found, config, access_token, ftp):
                     transcription = transcribe_audio_whisper(whisper_model, mp3_path, timeout=300)  # 5 minutes timeout
 
                 for recipient in recipients:
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    timestamp = modified_time.strftime("%B %d, %Y at %I:%M %p")
                     send_voicemail_email(access_token, config['O365']['sender_address'], recipient, mailbox, timestamp, mp3_path, transcription=transcription)
 
             os.remove(local_path)

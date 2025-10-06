@@ -11,11 +11,12 @@ import mimetypes
 import base64, json
 import subprocess
 import shutil
+import torch
 import whisper
 import concurrent.futures
 
 SCANNED_FILES_JSON_PATH = 'scanned_files.json'
-WHISPER_MODEL = 'medium'  # Change to desired model size: tiny, base, small, medium, large
+WHISPER_MODEL = 'large'  # Change to desired model size: tiny, base, small, medium, large
 FTP_TIME_OFFSET = timedelta(days=30)
 TEMP_DIR = Path('temp')
 
@@ -535,6 +536,11 @@ def main():
 
     # Load Whisper model
     whisper_model = None
+
+    if torch.cuda.is_available():
+        torch.cuda.init()
+        print(f"CUDA is available. Using device: {torch.cuda.get_device_name(0)}")
+
     try:
         print("Loading Whisper model...")
         whisper_model = whisper.load_model(WHISPER_MODEL)

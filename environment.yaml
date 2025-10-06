@@ -22,6 +22,7 @@ dependencies:
   - fsspec
   - flask
   - more-itertools
+  - gunicorn
   - pip
   - pip:
       - openai-whisper

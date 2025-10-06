@@ -283,24 +283,24 @@ def toggle_scheduler():
         flash('Scheduler stopped.', 'warning')
     return redirect(url_for('index'))
 
-if __name__ == '__main__':
+print("[Server] Loading configuration...")
 
-    print("[Server] Loading configuration...")
+if not os.path.exists('config.ini'):
+    print("[Server] Error: config.ini file not found. The contents of config_template.ini have been copied to config.ini.")
+    print("[Server] Please edit config.ini to add your configuration settings, then re-run the script.")
 
-    if not os.path.exists('config.ini'):
-        print("[Server] Error: config.ini file not found. The contents of config_template.ini have been copied to config.ini.")
-        print("[Server] Please edit config.ini to add your configuration settings, then re-run the script.")
-
-        template_path = 'config_template.ini'
-        if os.path.exists(template_path):
-            shutil.copyfile(template_path, 'config.ini')
-        else:
-            print("[Server] Error: config_template.ini file not found. Please ensure it exists in the script directory.")
-        
-        exit(1)
+    template_path = 'config_template.ini'
+    if os.path.exists(template_path):
+        shutil.copyfile(template_path, 'config.ini')
+    else:
+        print("[Server] Error: config_template.ini file not found. Please ensure it exists in the script directory.")
     
-    config = load_config()
-    if config.getboolean('SCHEDULER', 'scheduler_enabled_at_startup', fallback=False):
-        start_scheduler()  # Start the scheduler when the app starts
+    exit(1)
+
+config = load_config()
+if config.getboolean('SCHEDULER', 'scheduler_enabled_at_startup', fallback=False):
+    start_scheduler()  # Start the scheduler when the app starts
+
+if __name__ == '__main__':  
     app.run(port=5001, use_reloader=False) # use_reloader=False is important for scheduler
 

@@ -212,7 +212,7 @@ def transcribe_audio_whisper(model: whisper.Whisper, audio_path: str, timeout: f
     print("Attempting to transcribe audio with Whisper...")
     
     def transcribe():
-        return model.transcribe(audio_path, fp16=False)
+        return model.transcribe(audio_path)
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
         future = executor.submit(transcribe)

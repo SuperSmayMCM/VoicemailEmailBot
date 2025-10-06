@@ -16,7 +16,7 @@ import whisper
 import concurrent.futures
 
 SCANNED_FILES_JSON_PATH = 'scanned_files.json'
-WHISPER_MODEL = 'large'  # Change to desired model size: tiny, base, small, medium, large
+WHISPER_MODEL = 'medium'  # Change to desired model size: tiny, base, small, medium, large
 FTP_TIME_OFFSET = timedelta(days=30)
 TEMP_DIR = Path('temp')
 

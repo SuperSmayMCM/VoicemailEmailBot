@@ -45,7 +45,7 @@ def run_main_script():
         try:
             python_executable = sys.executable
             process = subprocess.Popen(
-                [python_executable, 'main.py'],
+                [python_executable, 'run_with_timeout.py', '900', 'main.py'], # 15 minutes timeout
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,

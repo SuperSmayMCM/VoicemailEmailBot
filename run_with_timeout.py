@@ -1,18 +1,48 @@
 import subprocess
 import sys
 import argparse
+import threading
+
+def stream_output(pipe, output_stream):
+    """Reads from a pipe and writes to a given stream."""
+    if not pipe:
+        return
+    for line in iter(pipe.readline, ''):
+        output_stream.write(line)
+        output_stream.flush()
+    pipe.close()
 
 def run_with_timeout(command, timeout_seconds):
     """
-    Runs a command with a specified timeout in a given working directory.
+    Runs a command with a specified timeout, streaming its stdout and stderr.
     Kills the process if it exceeds the timeout.
     """
     process = None
     try:
         print(f"Running command: '{' '.join(command)}' with timeout {timeout_seconds} seconds")
         
-        process = subprocess.Popen(command, stdout=sys.stdout, stderr=sys.stderr)
+        process = subprocess.Popen(
+            command, 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+
+        # Use threads to stream stdout and stderr simultaneously to the script's own streams
+        stdout_thread = threading.Thread(target=stream_output, args=(process.stdout, sys.stdout))
+        stderr_thread = threading.Thread(target=stream_output, args=(process.stderr, sys.stderr))
+
+        stdout_thread.start()
+        stderr_thread.start()
+
         process.wait(timeout=timeout_seconds)
+
+        # Wait for streaming threads to finish
+        stdout_thread.join()
+        stderr_thread.join()
+
     except FileNotFoundError:
         print(f"Error: Command not found. Make sure '{command[0]}' is in your PATH or provide an absolute path.")
     except subprocess.TimeoutExpired:
@@ -40,5 +70,10 @@ if __name__ == "__main__":
         parser.print_help()
         sys.exit(1)
 
-    run_with_timeout(args.command, args.timeout)
+    cmd_to_run = args.command
+    # If running a python script, automatically add the -u flag for unbuffered output
+    if cmd_to_run and cmd_to_run[0].endswith('python') and '-u' not in cmd_to_run:
+        cmd_to_run.insert(1, '-u')
+
+    run_with_timeout(cmd_to_run, args.timeout)
 

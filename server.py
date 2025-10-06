@@ -35,7 +35,7 @@ def run_main_script():
         return
 
     try:
-        print("Scheduler: Running main.py script...")
+        print("Scheduler: Running voicemail_to_email.py script with timeout...")
         
         # Reset log for the new run
         log_output = f"--- Log from {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n"
@@ -45,7 +45,7 @@ def run_main_script():
         try:
             python_executable = sys.executable
             process = subprocess.Popen(
-                [python_executable, 'run_with_timeout.py', '900', 'main.py'], # 15 minutes timeout
+                [python_executable, 'run_with_timeout.py', '900', python_executable, 'voicemail_to_email.py'], # 15 minutes timeout
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,

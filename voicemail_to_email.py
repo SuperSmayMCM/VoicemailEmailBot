@@ -57,7 +57,7 @@ def write_scanned_files(file_list: set[str]) -> None:
         json.dump(list(file_list), f, indent=2)
 
 # --- FTP Scanner Module ---
-def scan_ftp_folder(ftp_connection, base_path, scanned_files):
+def scan_ftp_folder(ftp_connection: ftplib.FTP, base_path: str, scanned_files: set[str]) -> tuple[dict[str, list[dict]], set[str]]:
     """
     Scans the FTP folder for new voicemail files by comparing against a
     list of previously scanned files.
@@ -100,16 +100,15 @@ def scan_ftp_folder(ftp_connection, base_path, scanned_files):
                         if full_path not in scanned_files:
                             try:
                                 mod_time_str = ftp_connection.voidcmd(f"MDTM {full_path}")[4:].strip()
-                                ftp_mod_time = datetime.strptime(mod_time_str, "%Y%m%d%H%M%S")
-                                actual_mod_time = ftp_mod_time + FTP_TIME_OFFSET
+                                ftp_mod_time = parse_mitel_ftp_date(mod_time_str)
                             except ftplib.all_errors:
-                                actual_mod_time = datetime.now()
+                                ftp_mod_time = datetime.now()
 
                             # Ensure dict entry exists
                             if mailbox_number not in new_files:
                                 new_files[mailbox_number] = []
 
-                            new_files[mailbox_number].append({'path': full_path, 'modified': actual_mod_time})
+                            new_files[mailbox_number].append({'path': full_path, 'modified': ftp_mod_time})
                 except ftplib.error_perm:
                     continue
     except ftplib.all_errors as e:
@@ -118,6 +117,42 @@ def scan_ftp_folder(ftp_connection, base_path, scanned_files):
         ftp_connection.cwd('/')
         
     return new_files, current_files
+
+def parse_mitel_ftp_date(date_string):
+    """Parses the Mitel PBX date string by correcting the zero-based month index.
+    Why is this needed? Who knows.
+    Once again, thanks Gemini for this one."""
+    
+    # 1. Extract the components
+    year = date_string[0:4]
+    month_str = date_string[4:6]
+    day_and_time = date_string[6:]
+    
+    # 2. Correct the Month Index
+    # Convert '01' to integer 1, add 1 to get 2 (February), then convert back to '02'
+    try:
+        zero_based_month = int(month_str)
+        # Check for invalid zero-based month index (should be 0-11)
+        if not 0 <= zero_based_month <= 11:
+             raise ValueError(f"Month index '{month_str}' is outside the expected 0-11 range.")
+
+        correct_month = zero_based_month + 1
+        
+        # Convert back to a two-digit string (e.g., 2 -> '02')
+        correct_month_str = str(correct_month).zfill(2)
+        
+    except ValueError as e:
+        # Handle cases where month_str is not a number or is out of range
+        raise ValueError(f"Could not parse or correct month component '{month_str}': {e}")
+    
+    # 3. Reconstruct the string
+    corrected_date_string = year + correct_month_str + day_and_time
+    
+    # 4. Standard Parsing
+    time_format = '%Y%m%d%H%M%S'
+    dt_object = datetime.strptime(corrected_date_string, time_format)
+    
+    return dt_object
 
 # --- Audio Converter Module ---
 def convert_ulaw_to_mp3(ulaw_path: Path, output_path: Path) -> bool:
@@ -431,6 +466,10 @@ def main():
         previously_scanned_files_set = current_files_on_ftp
         write_scanned_files(previously_scanned_files_set)
         print(f"Recorded {len(previously_scanned_files_set)} existing files as processed.")
+        ftp.quit()
+        print("FTP connection closed.")
+        print("Scan complete.")
+        return
 
     # Find new files since last scan, and collect current files on FTP
     new_files_found, current_files_on_ftp = scan_ftp_folder(ftp, config['FTP']['base_path'], previously_scanned_files_set)

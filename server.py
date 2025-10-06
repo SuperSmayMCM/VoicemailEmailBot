@@ -1,3 +1,4 @@
+import shutil
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 import configparser
 import json
@@ -281,6 +282,21 @@ def toggle_scheduler():
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
+
+    print("Loading configuration...")
+
+    if not os.path.exists('config.ini'):
+        print("Error: config.ini file not found. The contents of config_template.ini have been copied to config.ini.")
+        print("Please edit config.ini to add your configuration settings, then re-run the script.")
+
+        template_path = 'config_template.ini'
+        if os.path.exists(template_path):
+            shutil.copyfile(template_path, 'config.ini')
+        else:
+            print("Error: config_template.ini file not found. Please ensure it exists in the script directory.")
+        
+        exit(1)
+    
     config = load_config()
     if config.getboolean('SCHEDULER', 'scheduler_enabled_at_startup', fallback=False):
         start_scheduler()  # Start the scheduler when the app starts

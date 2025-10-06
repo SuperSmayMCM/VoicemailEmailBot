@@ -14,14 +14,14 @@ import whisper
 import concurrent.futures
 
 SCANNED_FILES_JSON_PATH = 'scanned_files.json'
-WHISPER_MODEL = 'small'  # Change to desired model size: tiny, base, small, medium, large
+WHISPER_MODEL = 'medium'  # Change to desired model size: tiny, base, small, medium, large
 FTP_TIME_OFFSET = timedelta(days=30)
 
 # --- Configuration Loader ---
-def load_config():
+def load_config(config_path='config.ini') -> configparser.ConfigParser:
     """Loads configuration from the config.ini file."""
     config = configparser.ConfigParser()
-    config.read('config.ini')
+    config.read(config_path)
     return config
 
 def load_mailbox_emails() -> dict[str, list[str]]:
@@ -278,17 +278,9 @@ def send_voicemail_email(access_token, sender_address, recipient, mailbox, times
         print(f"An error occurred while sending email: {e}")
         return False
 
-def process_files(new_files_found, prev_scanned_files, config, access_token, ftp):
+def process_files(new_files_found, prev_scanned_files, config, access_token, ftp, whisper_model=None):
 
     mailbox_emails = load_mailbox_emails()
-
-    # Load Whisper model
-    whisper_model = None
-    try:
-        whisper_model = whisper.load_model(WHISPER_MODEL)
-        print("Whisper model loaded.")
-    except Exception as e:
-        print(f"Failed to load Whisper model: {e}")
 
     for mailbox, file_infos in new_files_found.items():
         print(f"Found {len(file_infos)} new file(s) in mailbox {mailbox}.")
@@ -366,6 +358,17 @@ def main():
 
     print("Loading configuration...")
 
+    if not os.path.exists('config.ini'):
+        print("Error: config.ini file not found. The contents of config_template.ini have been copied to config.ini.")
+        print("Please edit config.ini to add your configuration settings, then re-run the script.")
+
+        template_path = 'config_template.ini'
+        if os.path.exists(template_path):
+            shutil.copyfile(template_path, 'config.ini')
+        else:
+            print("Error: config_template.ini file not found. Please ensure it exists in the script directory.")
+        return
+    
     config = load_config()
    
     print(f"""
@@ -400,6 +403,8 @@ def main():
     if not result or 'access_token' not in result:
         print("Failed to acquire app-only token. Result:", result)
         return
+    else:
+        print("Acquired Microsoft authentication token.")
 
     access_token = result['access_token']
 
@@ -445,10 +450,18 @@ def main():
     # Find new files since last scan, and collect current files on FTP
     new_files_found, current_files_on_ftp = scan_ftp_folder(ftp, config['FTP']['base_path'], previously_scanned_files_set)
 
+    # Load Whisper model
+    whisper_model = None
+    try:
+        whisper_model = whisper.load_model(WHISPER_MODEL)
+        print("Whisper model loaded.")
+    except Exception as e:
+        print(f"Failed to load Whisper model: {e}")
+
     if not new_files_found:
         print("No new files found.")
     else:
-        process_files(new_files_found, previously_scanned_files_set, config, access_token, ftp)
+        process_files(new_files_found, previously_scanned_files_set, config, access_token, ftp, whisper_model)
     
     ftp.quit()
     print("FTP connection closed.")

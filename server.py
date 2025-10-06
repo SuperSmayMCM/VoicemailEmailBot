@@ -302,5 +302,5 @@ if __name__ == '__main__':
     config = load_config()
     if config.getboolean('SCHEDULER', 'scheduler_enabled_at_startup', fallback=False):
         start_scheduler()  # Start the scheduler when the app starts
-    app.run(debug=True, port=5001, use_reloader=False) # use_reloader=False is important for scheduler
+    app.run(port=5001, use_reloader=False) # use_reloader=False is important for scheduler
 

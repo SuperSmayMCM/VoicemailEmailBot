@@ -17,6 +17,7 @@
         .button { background-color: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 1em; text-align: center; }
         .button:hover { background-color: #0056b3; }
         .flash-success { background-color: #d4edda; color: #155724; padding: 10px; border-radius: 4px; margin-bottom: 20px; text-align: center; }
+        .flash-danger { background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px; margin-bottom: 15px; text-align: center; }
         .mailbox-entries { display: flex; flex-direction: column; gap: 15px; }
         .mailbox-entry { display: grid; grid-template-columns: 1fr 2fr auto; gap: 10px; align-items: center; }
         .remove-btn { background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
@@ -93,6 +94,7 @@
 
             <div class="form-section">
                 <h2>Mailbox to Email Mappings</h2>
+                <p id="recipient_domain_display"> Configured Default Email Domain: @{{ config.O365.recipient_domain | default('') }}</p>
                 <div id="mailbox-entries" class="mailbox-entries">
                     {% for mailbox, emails in mailbox_emails.items() %}
                     <div class="mailbox-entry" id="entry-{{ loop.index0 }}">
@@ -136,6 +138,10 @@
                 <div class="form-group">
                     <label for="o365_sender_address">Sender Email Address</label>
                     <input type="text" id="o365_sender_address" name="o365_sender_address" value="{{ config.O365.sender_address | default('') }}">
+                </div>
+                <div class="form-group">
+                    <label for="o365_recipient_domain">Sender Email Address</label>
+                    <input type="text" id="o365_recipient_domain" name="o365_recipient_domain" value="{{ config.O365.recipient_domain | default('') }}">
                 </div>
                 <div class="form-group">
                     <label for="o365_client_id">Client ID</label>

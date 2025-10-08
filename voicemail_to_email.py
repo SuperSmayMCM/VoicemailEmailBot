@@ -41,7 +41,6 @@ def load_mailbox_emails() -> dict[str, list[str]]:
                     # If emails are valid, continue
                     if '@' in email and '.' in email.split('@')[-1]:
                         valid_emails.append(email)
-                        continue
                     # Else, if they look like just a username, append the domain from config.ini
                     elif domain and '@' not in email:
                         full_email = f"{email}@{domain}"
@@ -49,10 +48,8 @@ def load_mailbox_emails() -> dict[str, list[str]]:
                     # Otherwise, skip invalid emails
                     elif not domain:
                         print(f"Warning: No default email domain configured. Skipping email '{email}'.")
-                        emails.remove(email)
                     else:
                         print(f"Warning: Invalid email address '{email}' for mailbox {mailbox}. Skipping.")
-                        emails.remove(email)
                 # I know, I know, modifying a list while iterating over it is bad practice.
                 mailbox_emails[mailbox] = valid_emails
             return mailbox_emails
@@ -376,6 +373,9 @@ def process_files(new_files_found, prev_scanned_files, config, access_token, ftp
                     transcription = transcribe_audio_whisper(whisper_model, str(mp3_path), timeout=300)  # 5 minutes timeout
 
                 for recipient in recipients:
+                    if not config['O365']['sender_address']:
+                        print("Sender address is blank! Cannot send emails.")
+                        break
                     timestamp = modified_time.strftime("%B %d, %Y at %I:%M %p")
                     send_voicemail_email(access_token, config['O365']['sender_address'], recipient, mailbox, timestamp, str(mp3_path), transcription=transcription)
 
@@ -470,6 +470,11 @@ def main():
 
     # FTP connection
     print(f"Connecting to FTP server {config['FTP']['host']}...")
+
+    if config['FTP']['host'] == '':
+        print("No FTP host set! Exiting...")
+        return
+
     try:
         ftp = ftplib.FTP(config['FTP']['host'])
         ftp.login(user=config['FTP']['user'], passwd=config['FTP']['password'])
@@ -519,8 +524,8 @@ def main():
     tenant = config['O365']['tenant_id']
     client_secret = config['O365']['client_secret']
 
-    if not client_secret:
-        print("client_secret missing in config.ini; required for app-only authentication")
+    if not client_secret or not client_id or not tenant:
+        print("Client secret, client id, and tenant id must be configured!")
         return
 
     # For client credentials you must request the .default scope

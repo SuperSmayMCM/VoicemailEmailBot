@@ -55,10 +55,12 @@ def run_main_script():
                 universal_newlines=True
             )
 
+            prepend_line = f"[{MAIN_SCRIPT}]"
+
             # Stream stdout
             if process.stdout:
                 for line in iter(process.stdout.readline, ''):
-                    prepend_line = f"[{MAIN_SCRIPT}]"
+                    
                     with log_lock:
                         last_run_log += line
                     print(f"{prepend_line} {line}", end='') # Also print to server console with a prefix
@@ -71,6 +73,8 @@ def run_main_script():
                 with log_lock:
                     last_run_log += "\n--- STDERR ---\n"
                     last_run_log += stderr_output
+                for line in stderr_output.split('\n'):
+                    print(f"{prepend_line} {line}")
             
             with log_lock:
                 last_run_log += f"\n--- Process finished at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---"
@@ -148,12 +152,24 @@ def login():
         if 'WEB' not in config:
             config['WEB'] = {}
             save_config(config)
-        web_user = config.get('WEB', 'user', fallback='admin')
-        web_pass = config.get('WEB', 'password', fallback='password')
+
+        default_user = 'admin'
+        default_password = 'password'
+
+        web_user = config.get('WEB', 'user', fallback=default_user)
+        web_pass = config.get('WEB', 'password', fallback=default_password)
+
+        if not web_user:
+            web_user = default_user
+        if not web_pass:
+            web_pass = default_password
 
         if request.form.get('username') == web_user and request.form.get('password') == web_pass:
             session['logged_in'] = True
-            flash('You were successfully logged in', 'success')
+            if web_user == default_user and web_pass == default_password:
+                flash("Please update the password to something more secure!", 'danger')
+            else:
+                flash('You were successfully logged in', 'success')
             return redirect(url_for('index'))
         else:
             flash('Invalid credentials', 'danger')
@@ -229,6 +245,7 @@ def save_settings():
     if 'O365' not in config:
         config['O365'] = {}
     config['O365']['sender_address'] = request.form.get('o365_sender_address', '')
+    config['O365']['recipient_domain'] = request.form.get('o365_recipient_domain', '')
     config['O365']['client_id'] = request.form.get('o365_client_id', '')
     config['O365']['tenant_id'] = request.form.get('o365_tenant_id', '')
     if request.form.get('o365_client_secret'):
@@ -298,9 +315,15 @@ if not os.path.exists('config.ini'):
     exit(1)
 
 config = load_config()
-if config.getboolean('SCHEDULER', 'scheduler_enabled_at_startup', fallback=False):
+scheduler_enabled_at_startup = False
+try:
+    config.getboolean('SCHEDULER', 'scheduler_enabled_at_startup', fallback=False)
+except ValueError:
+    pass
+
+if scheduler_enabled_at_startup:
     start_scheduler()  # Start the scheduler when the app starts
 
 if __name__ == '__main__':  
-    app.run(port=5001, use_reloader=False) # use_reloader=False is important for scheduler
+    app.run(port=5001, use_reloader=False, debug=True) # use_reloader=False is important for scheduler
 

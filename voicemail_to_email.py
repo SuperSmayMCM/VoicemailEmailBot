@@ -31,7 +31,31 @@ def load_mailbox_emails() -> dict[str, list[str]]:
     """Loads mailbox to email mappings from mailbox_emails.json."""
     if os.path.exists('mailbox_emails.json'):
         with open('mailbox_emails.json', 'r') as f:
-            return json.load(f)
+            mailbox_emails = json.load(f)
+            config = load_config()
+            domain = config['O365'].get('recipient_domain', '').strip()
+            for mailbox, emails in mailbox_emails.items():
+                valid_emails = []
+                for i in range(len(emails)):
+                    email = emails[i]
+                    # If emails are valid, continue
+                    if '@' in email and '.' in email.split('@')[-1]:
+                        valid_emails.append(email)
+                        continue
+                    # Else, if they look like just a username, append the domain from config.ini
+                    elif domain and '@' not in email:
+                        full_email = f"{email}@{domain}"
+                        valid_emails.append(full_email)
+                    # Otherwise, skip invalid emails
+                    elif not domain:
+                        print(f"Warning: No default email domain configured. Skipping email '{email}'.")
+                        emails.remove(email)
+                    else:
+                        print(f"Warning: Invalid email address '{email}' for mailbox {mailbox}. Skipping.")
+                        emails.remove(email)
+                # I know, I know, modifying a list while iterating over it is bad practice.
+                mailbox_emails[mailbox] = valid_emails
+            return mailbox_emails
     return {}
 
 # --- File Management Module ---

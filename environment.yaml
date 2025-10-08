@@ -1,4 +1,4 @@
-name: FTPVoicemailToEmail
+name: VoicemailToEmail
 channels:
   - conda-forge
 dependencies:

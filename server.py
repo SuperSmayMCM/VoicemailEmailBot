@@ -304,15 +304,13 @@ print("[Server] Loading configuration...")
 
 if not os.path.exists('config.ini'):
     print("[Server] Error: config.ini file not found. The contents of config_template.ini have been copied to config.ini.")
-    print("[Server] Please edit config.ini to add your configuration settings, then re-run the script.")
+    print("[Server] Please edit config.ini to add your configuration settings.")
 
     template_path = 'config_template.ini'
     if os.path.exists(template_path):
         shutil.copyfile(template_path, 'config.ini')
     else:
         print("[Server] Error: config_template.ini file not found. Please ensure it exists in the script directory.")
-    
-    exit(1)
 
 config = load_config()
 scheduler_enabled_at_startup = False

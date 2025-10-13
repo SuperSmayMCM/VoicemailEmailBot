@@ -152,6 +152,10 @@
                     <input type="text" id="o365_tenant_id" name="o365_tenant_id" value="{{ config.O365.tenant_id | default('') }}">
                 </div>
                 <div class="form-group">
+                    <label for="o365_support_email">Tenant ID</label>
+                    <input type="text" id="o365_support_email" name="o365_support_email" value="{{ config.O365.support_email | default('') }}">
+                </div>
+                <div class="form-group">
                     <label for="o365_client_secret">Client Secret (leave blank to keep existing)</label>
                     <input type="password" id="o365_client_secret" name="o365_client_secret">
                 </div>

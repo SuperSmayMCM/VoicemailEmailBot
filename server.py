@@ -248,6 +248,7 @@ def save_settings():
     config['O365']['recipient_domain'] = request.form.get('o365_recipient_domain', '')
     config['O365']['client_id'] = request.form.get('o365_client_id', '')
     config['O365']['tenant_id'] = request.form.get('o365_tenant_id', '')
+    config['O365']['support_email'] = request.form.get('o365_support_email', '')
     if request.form.get('o365_client_secret'):
         config['O365']['client_secret'] = request.form.get('o365_client_secret', '')
 

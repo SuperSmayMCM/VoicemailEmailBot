@@ -1,0 +1,96 @@
+<html>
+
+<head>
+    <style>
+        body {
+            font-family: sans-serif;
+        }
+
+
+        .container {
+            padding: 20px;
+
+            border-radius: 5px;
+            max-width: 600px;
+        }
+
+
+        .header {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+
+        .info-table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+
+
+        .info-table td {
+            padding: 8px;
+            border: 1px solid #ddd;
+
+        }
+
+        .transcription {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border: 1px solid #eee;
+            border-radius: 5px;
+            overflow: auto;
+        }
+
+        .foot-image {
+            width: 170px;       /* Adjust size as needed */
+            pointer-events: none;
+            float: right;
+        }
+
+        
+
+        .divider-image {
+            pointer-events: none;
+        }
+
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">New Voicemail Received!</div>
+        <div class="subheader">Robo Lazer Eyes is here to deliver you a new voicemail.</div>
+        <br/>
+        <img src="cid:$crayon_line_2_cid " alt="Horizontal Crayon Line" class="divider-image"/>
+        <div class="transcription">
+            <div class="transcription-text">
+                <p ><b>Transcription:</b></p>
+                <p><small>Please note that Robo Lazer Eyes is a chicken, and the transcription will likely contain errors!</small></p>
+                <p>$transcription</p>
+            </div>
+            <img src="cid:$chicken_foot_cid" alt="A chicken footprint" class="foot-image"/>    
+            <!-- <img src="chicken_foot.png" alt="A chicken footprint" class="foot-image"/> -->
+        </div>
+        <br/> 
+        <table class="info-table">
+            <tr>
+                <td><b>Voicemail Mailbox Number:</b></td>
+                <td>Mailbox $mailbox</td>
+            </tr>
+            <tr>
+                <td><b>Time:</b></td>
+                <td>$timestamp</td>
+            </tr>
+        </table>
+        <p>Please see the attached audio file for the full message.</p>
+        <img src="cid:$crayon_line_3_cid " alt="Horizontal Crayon Line" class="divider-image"/>
+    </div>
+    <div class="footer">
+        <p>This email was sent by a robot! Please email $support_email if you have any questions!</p>
+    </div>
+</body>
+
+</html>

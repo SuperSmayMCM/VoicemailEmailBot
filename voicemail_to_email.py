@@ -14,6 +14,7 @@ import shutil
 import torch
 import whisper
 import concurrent.futures
+from string import Template
 
 SCANNED_FILES_JSON_PATH = 'scanned_files.json'
 WHISPER_MODEL = 'medium'  # Change to desired model size: tiny, base, small, medium, large
@@ -249,70 +250,131 @@ def transcribe_audio_whisper(model: whisper.Whisper, audio_path: str, timeout: f
             return ""
 
 # --- Email Sender Module ---
-def send_voicemail_email(access_token, sender_address, recipient, mailbox, timestamp, attachment_path, transcription=None):
+def send_voicemail_email(access_token, recipient, mailbox, timestamp, audio_attachment_path, transcription=None):
     """Sends an email with a new voicemail attachment using Microsoft Graph sendMail.
     """
+
+    config = load_config()
+
     try:
         # Build message
-        subject = f"New Voicemail from Mailbox {mailbox}"
+        subject = f"New Voicemail from Mailbox {mailbox}!"
 
-        # Build HTML body
-        body_content = f"""
-        <html>
-        <head>
-            <style>
-                body {{ font-family: sans-serif; }}
-                .container {{ padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px; }}
-                .header {{ font-size: 1.2em; font-weight: bold; margin-bottom: 10px; }}
-                .info-table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; }}
-                .info-table td {{ padding: 8px; border: 1px solid #ddd; }}
-                .transcription {{ margin-top: 20px; padding: 15px; background-color: #f9f9f9; border: 1px solid #eee; border-radius: 5px; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">New Voicemail Received</div>
-                <table class="info-table">
-                    <tr><td><b>From:</b></td><td>Mailbox {mailbox}</td></tr>
-                    <tr><td><b>Time:</b></td><td>{timestamp}</td></tr>
-                </table>
-                <p>Please see the attached audio file for the full message.</p>
-        """
+        # CIDs for the images. This lets us include the image in the email, and reference it in the HTML.
+        # Files will be loaded later, and attached with these IDs
+        crayon_line_2_cid = 'crayonline2' 
+        crayon_line_3_cid = 'crayonline3'
+        chicken_foot_cid = 'chickenfoot'
 
-        if transcription:
-            body_content += f"""
-                <div class="transcription">
-                    <b>Transcription:</b>
-                    <p>{transcription}</p>
-                </div>
-            """
-        
-        body_content += """
-            </div>
-        </body>
-        </html>
-        """
-
-        # Read and base64-encode attachment
-        with open(attachment_path, 'rb') as f:
-            data = f.read()
-        b64 = base64.b64encode(data).decode('utf-8')
-        content_type, _ = mimetypes.guess_type(attachment_path)
-        if content_type is None:
-            content_type = 'application/octet-stream'
-
-        attachment = {
-            "@odata.type": "#microsoft.graph.fileAttachment",
-            "name": os.path.basename(attachment_path),
-            "contentBytes": b64,
-            "contentType": content_type,
+        # Build HTML Body using the template
+        email_data = {
+            'mailbox': mailbox,
+            'transcription': transcription if transcription else "No transcription provided.",
+            'timestamp': timestamp,
+            'support_email': config['O365']['support_email'] if config['O365']['support_email'] else 'tech support',
+            'crayon_line_2_cid': crayon_line_2_cid,
+            'crayon_line_3_cid': crayon_line_3_cid,
+            'chicken_foot_cid': chicken_foot_cid
         }
+
+        with open('email_template.html') as template_file:
+            email_template = template_file.read()
+
+        template = Template(email_template)
+
+        body_content = template.substitute(email_data)
+
+        # Read and base64-encode audio attachment
+        audio_attachment = None
+        if audio_attachment_path is None:
+            print("Warning! Audio file path is None, so no audio will be included!")
+        else:
+            with open(audio_attachment_path, 'rb') as f:
+                data = f.read()
+            b64 = base64.b64encode(data).decode('utf-8')
+            content_type, _ = mimetypes.guess_type(audio_attachment_path)
+            if content_type is None:
+                content_type = 'application/octet-stream'
+
+            audio_attachment = {
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                "name": os.path.basename(audio_attachment_path),
+                "contentBytes": b64,
+                "contentType": content_type,
+            }
+
+        crayon_line_2_path = 'CrayonLines-2orange.png'
+        crayon_line_3_path = 'CrayonLines-3orange.png'
+        chicken_foot_path = 'chicken_foot.png'
+
+        with open(crayon_line_2_path, 'rb') as f:
+            image_data = f.read()
+            b64_image = base64.b64encode(image_data).decode('utf-8')
+            image_content_type, _ = mimetypes.guess_type(crayon_line_2_path)
+            if image_content_type is None:
+                image_content_type = 'application/octet-stream'
+
+        crayon_line_2_attachment = {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": os.path.basename(crayon_line_2_path),
+            "contentBytes": b64_image,
+            "contentType": image_content_type,
+            "isInline": True,        # Mark as inline
+            "contentId": crayon_line_2_cid   # Assign the Content-ID
+        }
+
+        with open(crayon_line_3_path, 'rb') as f:
+            image_data = f.read()
+            b64_image = base64.b64encode(image_data).decode('utf-8')
+            image_content_type, _ = mimetypes.guess_type(crayon_line_3_path)
+            if image_content_type is None:
+                image_content_type = 'application/octet-stream'
+
+        crayon_line_3_attachment = {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": os.path.basename(crayon_line_3_path),
+            "contentBytes": b64_image,
+            "contentType": image_content_type,
+            "isInline": True,        # Mark as inline
+            "contentId": crayon_line_3_cid   # Assign the Content-ID
+        }
+
+        with open(chicken_foot_path, 'rb') as f:
+            image_data = f.read()
+            b64_image = base64.b64encode(image_data).decode('utf-8')
+            image_content_type, _ = mimetypes.guess_type(chicken_foot_path)
+            if image_content_type is None:
+                image_content_type = 'application/octet-stream'
+
+        chicken_foot_attachment = {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": os.path.basename(chicken_foot_path),
+            "contentBytes": b64_image,
+            "contentType": image_content_type,
+            "isInline": True,        # Mark as inline
+            "contentId": chicken_foot_cid   # Assign the Content-ID
+        }
+
+
+        # 3. Build the final message with BOTH attachments
+        attachments = []
+        if audio_attachment:
+            attachments.append(audio_attachment)
+
+        if crayon_line_2_attachment:
+            attachments.append(crayon_line_2_attachment)
+
+        if crayon_line_3_attachment:
+            attachments.append(crayon_line_3_attachment)
+
+        if chicken_foot_attachment:
+            attachments.append(chicken_foot_attachment)
 
         message = {
             "subject": subject,
             "body": {"contentType": "HTML", "content": body_content},
             "toRecipients": [{"emailAddress": {"address": recipient}}],
-            "attachments": [attachment]
+            "attachments": attachments
         }
 
         headers = {
@@ -321,7 +383,7 @@ def send_voicemail_email(access_token, sender_address, recipient, mailbox, times
         }
 
         # attempt to send as specified sender
-        url = f'https://graph.microsoft.com/v1.0/users/{sender_address}/sendMail'
+        url = f'https://graph.microsoft.com/v1.0/users/{config["O365"]["sender_address"]}/sendMail'
 
         payload = {"message": message, "saveToSentItems": "true"}
 
@@ -377,7 +439,7 @@ def process_files(new_files_found, prev_scanned_files, config, access_token, ftp
                         print("Sender address is blank! Cannot send emails.")
                         break
                     timestamp = modified_time.strftime("%B %d, %Y at %I:%M %p")
-                    send_voicemail_email(access_token, config['O365']['sender_address'], recipient, mailbox, timestamp, str(mp3_path), transcription=transcription)
+                    send_voicemail_email(access_token, recipient, mailbox, timestamp, str(mp3_path), transcription=transcription)
 
             os.remove(local_path)
             if os.path.exists(mp3_path):

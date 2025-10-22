@@ -3,18 +3,18 @@ import json
 import random 
 
 scanned_files_path = 'scanned_files.json'
-mailbox_number = '0'
+mailbox_number = '379'
 
 with open(scanned_files_path, 'r') as f:
     scanned_files = json.load(f)
-    mailbox_0_indexes = []
+    mailbox_indexes = []
     for i in range(len(scanned_files)):
         line = scanned_files[i]
-        if '/0/' in line:
-            mailbox_0_indexes.append(i)
+        if f'/{mailbox_number}/' in line:
+            mailbox_indexes.append(i)
 
-if len(mailbox_0_indexes) > 0:
-    random_index = random.choice(mailbox_0_indexes)
+if len(mailbox_indexes) > 0:
+    random_index = random.choice(mailbox_indexes)
     del scanned_files[random_index]
     with open(scanned_files_path, 'w') as f:
         json.dump(scanned_files, f, indent=4)

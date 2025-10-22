@@ -5,3 +5,4 @@ scanned_files.json
 mailbox_emails.json
 msal*
 temp/
+.DS_Store

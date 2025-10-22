@@ -277,7 +277,7 @@ def send_voicemail_email(access_token, recipient, mailbox, timestamp, audio_atta
             'chicken_foot_cid': chicken_foot_cid
         }
 
-        with open('email_template.html') as template_file:
+        with open('./templates/email_template.html') as template_file:
             email_template = template_file.read()
 
         template = Template(email_template)
@@ -303,9 +303,9 @@ def send_voicemail_email(access_token, recipient, mailbox, timestamp, audio_atta
                 "contentType": content_type,
             }
 
-        crayon_line_2_path = 'CrayonLines-2orange.png'
-        crayon_line_3_path = 'CrayonLines-3orange.png'
-        chicken_foot_path = 'chicken_foot.png'
+        crayon_line_2_path = './images/CrayonLines-2orange.png'
+        crayon_line_3_path = './images/CrayonLines-3orange.png'
+        chicken_foot_path = './images/chicken_foot.png'
 
         with open(crayon_line_2_path, 'rb') as f:
             image_data = f.read()

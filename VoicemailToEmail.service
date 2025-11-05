@@ -1,0 +1,21 @@
+[Unit]
+Description=Voicemail To Email
+After=network.target
+
+[Service]
+Type=simple
+User=mcm
+# This must be the directory where your wsgi.py file is located
+WorkingDirectory=/home/mcm/Documents/VoicemailEmailBot
+
+#
+# === This is the key change ===
+# We call the gunicorn executable directly from its full path
+# Path = CONDA_PATH + /envs/ + CONDA_ENV + /bin/gunicorn
+#
+ExecStart=/home/mcm/miniconda3/envs/VoicemailToEmail/bin/gunicorn --bind 0.0.0.0:5000 wsgi:app
+
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

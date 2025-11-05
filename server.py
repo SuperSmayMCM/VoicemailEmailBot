@@ -312,8 +312,12 @@ if not os.path.exists('config.ini'):
         shutil.copyfile(template_path, 'config.ini')
     else:
         print("[Server] Error: config_template.ini file not found. Please ensure it exists in the script directory.")
+        sys.exit(1)
 
 config = load_config()
+
+print("[Server] Config file loaded.")
+
 scheduler_enabled_at_startup = False
 try:
     config.getboolean('SCHEDULER', 'scheduler_enabled_at_startup', fallback=False)
@@ -322,7 +326,10 @@ except ValueError:
 
 if scheduler_enabled_at_startup:
     start_scheduler()  # Start the scheduler when the app starts
+    print("[Server] Scheduler enabled at startup. Starting scheduler...")
 
-if __name__ == '__main__':  
+print("[Server] Web Backend Ready.")
+
+if __name__ == '__main__':
     app.run(port=5001, use_reloader=False, debug=True) # use_reloader=False is important for scheduler
 

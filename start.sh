@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # Path to your Conda installation (e.g., Miniconda3)
-CONDA_PATH="~/miniconda" 
+CONDA_PATH="/home/mcm/miniconda" 
 
 # Name of your Conda environment
-CONDA_ENV="FTPVoicemailEmail"
+CONDA_ENV="VoicemailToEmail"
 
 # Activate the Conda environment
 source "$CONDA_PATH/bin/activate" "$CONDA_ENV"

@@ -320,7 +320,7 @@ print("[Server] Config file loaded.")
 
 scheduler_enabled_at_startup = False
 try:
-    config.getboolean('SCHEDULER', 'scheduler_enabled_at_startup', fallback=False)
+    scheduler_enabled_at_startup = config.getboolean('SCHEDULER', 'scheduler_enabled_at_startup', fallback=False)
 except ValueError:
     pass
 

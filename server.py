@@ -16,6 +16,14 @@ CONFIG_PATH = 'config.ini'
 MAILBOX_EMAILS_PATH = 'mailbox_emails.json'
 MAIN_SCRIPT = 'voicemail_to_email.py'
 
+git_commit_id = "unknown"
+# Try to get the current git commit ID
+try:
+    git_commit_id = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('utf-8').strip()
+    print(f"[Server] Git commit ID: {git_commit_id}")
+except Exception as e:
+    print(f"[Server] Could not get git commit ID: {e}")
+
 # --- Globals for Scheduler ---
 last_run_log = "Scheduler has not run yet."
 scheduler_thread_instance = None
@@ -188,7 +196,7 @@ def index():
     config = load_config()
     mailbox_emails = load_mailbox_emails()
     scheduler_running = scheduler_thread_instance is not None and scheduler_thread_instance.is_alive()
-    return render_template('index.html', config=config, mailbox_emails=mailbox_emails, scheduler_running=scheduler_running)
+    return render_template('index.html', config=config, mailbox_emails=mailbox_emails, scheduler_running=scheduler_running, git_commit_id=git_commit_id)
 
 @app.route('/logs')
 def logs():

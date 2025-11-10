@@ -56,6 +56,14 @@ def load_mailbox_emails() -> dict[str, list[str]]:
             return mailbox_emails
     return {}
 
+def get_git_commit_id() -> str:
+    """Gets the current git commit ID, or 'unknown' if it cannot be determined."""
+    try:
+        commit_id = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('utf-8').strip()
+        return commit_id
+    except Exception:
+        return "unknown"
+
 # --- File Management Module ---
 def read_scanned_files() -> set[str]:
     """
@@ -263,7 +271,7 @@ def send_voicemail_email(access_token, recipient, mailbox, timestamp, audio_atta
         # CIDs for the images. This lets us include the image in the email, and reference it in the HTML.
         # Files will be loaded later, and attached with these IDs
         crayon_line_2_cid = 'crayonline2' 
-        crayon_line_3_cid = 'crayonline3'
+        # crayon_line_3_cid = 'crayonline3'
         chicken_foot_cid = 'chickenfoot'
 
         # Build HTML Body using the template
@@ -273,8 +281,9 @@ def send_voicemail_email(access_token, recipient, mailbox, timestamp, audio_atta
             'timestamp': timestamp,
             'support_email': config['O365']['support_email'] if config['O365']['support_email'] else 'tech support',
             'crayon_line_2_cid': crayon_line_2_cid,
-            'crayon_line_3_cid': crayon_line_3_cid,
-            'chicken_foot_cid': chicken_foot_cid
+            # 'crayon_line_3_cid': crayon_line_3_cid,
+            'chicken_foot_cid': chicken_foot_cid,
+            'git_commit_id': get_git_commit_id(),
         }
 
         with open('./templates/email_template.html') as template_file:
@@ -304,7 +313,7 @@ def send_voicemail_email(access_token, recipient, mailbox, timestamp, audio_atta
             }
 
         crayon_line_2_path = './images/CrayonLines-2orange.png'
-        crayon_line_3_path = './images/CrayonLines-3orange.png'
+        # crayon_line_3_path = './images/CrayonLines-3orange.png'
         chicken_foot_path = './images/chicken_foot.png'
 
         with open(crayon_line_2_path, 'rb') as f:
@@ -323,21 +332,21 @@ def send_voicemail_email(access_token, recipient, mailbox, timestamp, audio_atta
             "contentId": crayon_line_2_cid   # Assign the Content-ID
         }
 
-        with open(crayon_line_3_path, 'rb') as f:
-            image_data = f.read()
-            b64_image = base64.b64encode(image_data).decode('utf-8')
-            image_content_type, _ = mimetypes.guess_type(crayon_line_3_path)
-            if image_content_type is None:
-                image_content_type = 'application/octet-stream'
+        # with open(crayon_line_3_path, 'rb') as f:
+        #     image_data = f.read()
+        #     b64_image = base64.b64encode(image_data).decode('utf-8')
+        #     image_content_type, _ = mimetypes.guess_type(crayon_line_3_path)
+        #     if image_content_type is None:
+        #         image_content_type = 'application/octet-stream'
 
-        crayon_line_3_attachment = {
-            "@odata.type": "#microsoft.graph.fileAttachment",
-            "name": os.path.basename(crayon_line_3_path),
-            "contentBytes": b64_image,
-            "contentType": image_content_type,
-            "isInline": True,        # Mark as inline
-            "contentId": crayon_line_3_cid   # Assign the Content-ID
-        }
+        # crayon_line_3_attachment = {
+        #     "@odata.type": "#microsoft.graph.fileAttachment",
+        #     "name": os.path.basename(crayon_line_3_path),
+        #     "contentBytes": b64_image,
+        #     "contentType": image_content_type,
+        #     "isInline": True,        # Mark as inline
+        #     "contentId": crayon_line_3_cid   # Assign the Content-ID
+        # }
 
         with open(chicken_foot_path, 'rb') as f:
             image_data = f.read()
@@ -364,8 +373,8 @@ def send_voicemail_email(access_token, recipient, mailbox, timestamp, audio_atta
         if crayon_line_2_attachment:
             attachments.append(crayon_line_2_attachment)
 
-        if crayon_line_3_attachment:
-            attachments.append(crayon_line_3_attachment)
+        # if crayon_line_3_attachment:
+        #     attachments.append(crayon_line_3_attachment)
 
         if chicken_foot_attachment:
             attachments.append(chicken_foot_attachment)
@@ -527,6 +536,11 @@ def main():
 """)  
     
     remove_temp_dir()
+
+    ffmpeg_path = shutil.which('ffmpeg')
+    if not ffmpeg_path:
+        print("Error: ffmpeg not found in PATH. Please install ffmpeg to enable audio conversion.")
+        return
     
     print("Checking for new files...")
 

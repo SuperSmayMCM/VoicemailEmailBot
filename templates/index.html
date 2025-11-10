@@ -63,7 +63,33 @@
             </div>
         </div>
 
+        <br>
+
         <form action="/save" method="post">
+
+            <div class="form-section">
+                <h2>Mailbox to Email Mappings</h2>
+                <p id="recipient_domain_display"> Configured Default Email Domain: @{{ config.O365.recipient_domain | default('') }}</p>
+                <div id="mailbox-entries" class="mailbox-entries">
+                    {% for mailbox, emails in mailbox_emails.items() %}
+                    <div class="mailbox-entry" id="entry-{{ loop.index0 }}">
+                        <input type="text" name="mailbox_id_{{ loop.index0 }}" value="{{ mailbox }}">
+                        <input type="text" name="emails_{{ loop.index0 }}" value="{{ emails|join(', ') }}" placeholder="comma-separated emails">
+                        <input type="hidden" name="original_mailbox_id_{{ loop.index0 }}" value="{{ mailbox }}">
+                        <button type="button" class="remove-btn" onclick="removeMailbox('entry-{{ loop.index0 }}')">Remove</button>
+                    </div>
+                    {% endfor %}
+                </div>
+                <hr>
+                <h3>Add New Mailbox</h3>
+                <div class="mailbox-entry">
+                     <input type="text" id="new_mailbox_id" name="new_mailbox_id" placeholder="Mailbox ID">
+                     <input type="text" id="new_mailbox_emails" name="new_mailbox_emails" placeholder="comma-separated emails">
+                </div>
+                <br>
+                <button type="submit" class="button">Save All Settings</button>
+            </div>
+
             <div class="form-section">
                 <h2>General Settings</h2>
                 <div class="form-group">
@@ -92,26 +118,7 @@
                 </div>
             </div>
 
-            <div class="form-section">
-                <h2>Mailbox to Email Mappings</h2>
-                <p id="recipient_domain_display"> Configured Default Email Domain: @{{ config.O365.recipient_domain | default('') }}</p>
-                <div id="mailbox-entries" class="mailbox-entries">
-                    {% for mailbox, emails in mailbox_emails.items() %}
-                    <div class="mailbox-entry" id="entry-{{ loop.index0 }}">
-                        <input type="text" name="mailbox_id_{{ loop.index0 }}" value="{{ mailbox }}">
-                        <input type="text" name="emails_{{ loop.index0 }}" value="{{ emails|join(', ') }}" placeholder="comma-separated emails">
-                        <input type="hidden" name="original_mailbox_id_{{ loop.index0 }}" value="{{ mailbox }}">
-                        <button type="button" class="remove-btn" onclick="removeMailbox('entry-{{ loop.index0 }}')">Remove</button>
-                    </div>
-                    {% endfor %}
-                </div>
-                <hr>
-                <h3>Add New Mailbox</h3>
-                <div class="mailbox-entry">
-                     <input type="text" id="new_mailbox_id" name="new_mailbox_id" placeholder="Mailbox ID">
-                     <input type="text" id="new_mailbox_emails" name="new_mailbox_emails" placeholder="comma-separated emails">
-                </div>
-            </div>
+            
 
             <div class="form-section">
                 <h2>FTP Settings</h2>
@@ -152,7 +159,7 @@
                     <input type="text" id="o365_tenant_id" name="o365_tenant_id" value="{{ config.O365.tenant_id | default('') }}">
                 </div>
                 <div class="form-group">
-                    <label for="o365_support_email">Tenant ID</label>
+                    <label for="o365_support_email">Support Email</label>
                     <input type="text" id="o365_support_email" name="o365_support_email" value="{{ config.O365.support_email | default('') }}">
                 </div>
                 <div class="form-group">
@@ -165,7 +172,8 @@
         </form>
     </div>
 
-    <p>Vibe coded with ❤️ by Smay. I have no idea how it works but it does. Thanks Gemini!</p>
+    <p>Vibe coded with ❤️ by Smay. I only know how some of this works. Thanks Gemini!</p>
+    <p><small>Commit ID: {{ git_commit_id }}</small></p>
 
     <script>
         function removeMailbox(entryId) {

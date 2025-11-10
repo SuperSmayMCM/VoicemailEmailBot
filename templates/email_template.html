@@ -44,17 +44,30 @@
             border: 1px solid #eee;
             border-radius: 5px;
             overflow: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .transcription-text {
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 auto;
         }
 
         .transcription-disclaimer {
             color: #666;
             display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+
         }
 
         .foot-image {
             width: 170px;
             height: 74px;
             pointer-events: none;
+            
+
         }
 
         
@@ -65,6 +78,12 @@
             width: 100%;
         }
 
+        .commit-id {
+            font-size: 0.7em;
+            opacity: 0.1;
+            margin-top: 20px;
+        }
+
     </style>
 </head>
 
@@ -73,13 +92,13 @@
         <div class="header">New Voicemail Received!</div>
         <div class="subheader">Lazer Eyes is here to deliver you a new voicemail.</div>
         <br/>
-        <img src="cid:$crayon_line_2_cid" alt="Horizontal Crayon Line" class="divider-image"/>
+        <p>Message Received: <strong>$timestamp</strong></p>
         <div class="transcription">
             <div class="transcription-text">
                 <p ><b>Transcription:</b></p>
                 <p>$transcription</p>
                 <div class="transcription-disclaimer">
-                    <p><small>Please note that Lazer Eyes is a chicken (and a robot), so the transcription will likely contain errors!</small></p>
+                    <p><small>Lazer Eyes is a chicken (and a robot), so the transcription may contain errors!</small></p>
                     <img src="cid:$chicken_foot_cid" alt="A chicken footprint" class="foot-image"/>  
                 </div>
                 
@@ -93,17 +112,14 @@
                 <td><b>Voicemail Mailbox Number:</b></td>
                 <td>Mailbox $mailbox</td>
             </tr>
-            <tr>
-                <td><b>Time:</b></td>
-                <td>$timestamp</td>
-            </tr>
         </table>
-        <p>Attached audio file contains the full voicemail message.</p>
-        <img src="cid:$crayon_line_3_cid" alt="Horizontal Crayon Line" class="divider-image"/>
+        <p>Attached audio file contains the full voicemail message. You can see more info and respond, forward, or delete the message on your desk phone.</p>
+        <img src="cid:$crayon_line_2_cid" alt="Horizontal Crayon Line" class="divider-image"/>
     </div>
     <div class="footer">
-        <p>This email was sent by a robot! Please email $support_email if you have any questions!</p>
+        <p>This email was sent by a robot! Please email $support_email with any questions or concerns.</p>
     </div>
+    <div class="commit-id">Commit ID: $git_commit_id</div>
 </body>
 
 </html>

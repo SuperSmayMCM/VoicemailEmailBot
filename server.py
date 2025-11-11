@@ -25,23 +25,35 @@ except Exception as e:
     print(f"[Server] Could not get git commit ID: {e}")
 
 # --- Globals for Scheduler ---
-last_run_log = "Scheduler has not run yet."
+current_running_log = "Scheduler has not run yet."
+last_run_log = ""
 scheduler_thread_instance = None
 stop_scheduler_flag = threading.Event()
 log_lock = threading.Lock() # To safely update the log from the thread
 script_execution_lock = threading.Lock() # To prevent concurrent script runs
 
+'''
+Runs the main.py script and captures its output in real-time.
+Uses a lock to prevent concurrent executions.
+
+Captures stdout and stderr and stores it in current_running_log.
+Also stores output and checks if the output was different than last run. If it was, it prints it to the console. Otherwise it only prints a message saying no changes to reduce log noise.
+'''
 def run_main_script():
     """Runs the main.py script and captures its output in real-time."""
+    global current_running_log
     global last_run_log
+    current_print_log = ""
+
+
     if not script_execution_lock.acquire(blocking=False):
         print("[Scheduler] Attempted to run script while it was already running.")
         # Log this attempt to the user-visible log
         with log_lock:
             # Use a temporary variable to build the string to avoid repeated lock acquisitions
-            current_log = last_run_log
+            current_log = current_running_log
             current_log += f"\n--- Manual run request denied: Script is already running. ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ---\n"
-            last_run_log = current_log
+            current_running_log = current_log
         return
 
     try:
@@ -50,48 +62,77 @@ def run_main_script():
         # Reset log for the new run
         log_output = f"--- Log from {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n"
         with log_lock:
-            last_run_log = log_output
+            current_running_log = log_output
         
         try:
             python_executable = sys.executable
+
+            # Ensure child python processes are unbuffered so we can stream output in
+            # real time. Merge stderr into stdout so we capture everything as it
+            # appears rather than waiting until process exit.
+            env = os.environ.copy()
+            env['PYTHONUNBUFFERED'] = '1'
+
             process = subprocess.Popen(
                 [python_executable, 'run_with_timeout.py', '900', python_executable, MAIN_SCRIPT], # 15 minutes timeout
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1, # Line-buffered
-                universal_newlines=True
+                universal_newlines=True,
+                env=env
             )
 
             prepend_line = f"[{MAIN_SCRIPT}]"
 
-            # Stream stdout
+            # Stream stdout in real time. Break when the process ends and no more
+            # data is available.
             if process.stdout:
-                for line in iter(process.stdout.readline, ''):
-                    
-                    with log_lock:
-                        last_run_log += line
-                    print(f"{prepend_line} {line}", end='') # Also print to server console with a prefix
-            
+                while True:
+                    line = process.stdout.readline()
+                    # If we got a line, append it to the shared log immediately
+                    if line:
+                        with log_lock:
+                            current_running_log += line
+
+                        current_print_log += f"{prepend_line} {line}"
+                        # Optional server-side echo for debugging
+                    else:
+                        # No data right now. If process finished, break; otherwise loop
+                        if process.poll() is not None:
+                            break
+                        # slight sleep to avoid busy-waiting
+                        time.sleep(0.1)
+
+            # Read any final data that may remain
+            try:
+                if process.stdout:
+                    remaining = process.stdout.read()
+                    if remaining:
+                        with log_lock:
+                            current_running_log += remaining
+                        current_print_log += ''.join(f"{prepend_line} {l}\n" for l in remaining.split('\n') if l)
+            except Exception:
+                pass
+
             process.wait() # Wait for the process to complete
 
-            # Capture any remaining stderr
-            stderr_output = process.stderr.read() if process.stderr else ""
-            if stderr_output:
-                with log_lock:
-                    last_run_log += "\n--- STDERR ---\n"
-                    last_run_log += stderr_output
-                for line in stderr_output.split('\n'):
-                    print(f"{prepend_line} {line}")
-            
             with log_lock:
-                last_run_log += f"\n--- Process finished at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---"
+                current_running_log += f"\n--- Process finished at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---"
+            
+            # Only print to console if the log changed
+            if current_print_log != last_run_log:
+                print(current_print_log)
+                last_run_log = current_print_log
+            else:
+                print(f"[Scheduler] No changes in output from last run of {MAIN_SCRIPT}.")
+            
             print(f"[Scheduler] {MAIN_SCRIPT} finished.")
 
         except Exception as e:
             error_message = f"--- Scheduler failed to execute {MAIN_SCRIPT} at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n{e}"
             with log_lock:
-                last_run_log = error_message
+                current_running_log = error_message
             print(f"[Scheduler] Failed to run {MAIN_SCRIPT}: {e}")
     finally:
         script_execution_lock.release()
@@ -210,7 +251,7 @@ def get_log_data():
     if not session.get('logged_in'):
         return "Not authorized", 401
     with log_lock:
-        return last_run_log
+        return current_running_log
 
 @app.route('/save', methods=['POST'])
 def save_settings():

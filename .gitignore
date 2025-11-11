@@ -3,6 +3,7 @@ __pycache__/
 config.ini
 scanned_files.json
 mailbox_emails.json
+statistics.json
 msal*
 temp/
 .DS_Store

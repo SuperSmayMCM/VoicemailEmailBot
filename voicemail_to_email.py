@@ -11,15 +11,24 @@ import mimetypes
 import base64, json
 import subprocess
 import shutil
+import threading
+import atexit
+import tempfile
 import torch
 import whisper
 import concurrent.futures
 from string import Template
+from typing import cast
 
 SCANNED_FILES_JSON_PATH = 'scanned_files.json'
 WHISPER_MODEL = 'medium'  # Change to desired model size: tiny, base, small, medium, large
 FTP_TIME_OFFSET = timedelta(days=30)
 TEMP_DIR = Path('temp')
+STATISTICS_PATH = 'statistics.json'
+
+# In-memory stats cache to avoid frequent disk I/O. Flushes at exit.
+statistics_cache: dict | None = None
+stats_cache_lock = threading.Lock()
 
 # --- Configuration Loader ---
 def load_config(config_path='config.ini') -> configparser.ConfigParser:
@@ -27,6 +36,144 @@ def load_config(config_path='config.ini') -> configparser.ConfigParser:
     config = configparser.ConfigParser()
     config.read(config_path)
     return config
+
+def load_statistics() -> dict:
+    """Loads statistics from statistics.json into the in-memory cache and returns a copy.
+
+    If the in-memory cache is already initialized, return a copy of it. Otherwise, read
+    from disk (if present) and populate the cache.
+    """
+    global statistics_cache
+    # Return copy if cache already populated
+    if statistics_cache is not None:
+        # return a shallow copy
+        return cast(dict, statistics_cache).copy()
+
+    # Initialize cache from disk
+    if os.path.exists(STATISTICS_PATH):
+        try:
+            with open(STATISTICS_PATH, 'r') as f:
+                statistics_cache = json.load(f)
+        except Exception:
+            statistics_cache = {}
+    else:
+        statistics_cache = {}
+
+    assert statistics_cache is not None
+    return cast(dict, statistics_cache).copy()
+
+def write_statistics(stats: dict) -> None:
+    """Writes statistics to statistics.json atomically and updates the in-memory cache."""
+    global statistics_cache
+    with stats_cache_lock:
+        statistics_cache = stats.copy() if stats is not None else {}
+
+        # Atomic write to avoid corruption
+        dir_name = os.path.dirname(os.path.abspath(STATISTICS_PATH)) or '.'
+        fd, tmp_path = tempfile.mkstemp(dir=dir_name, prefix='statistics-', suffix='.tmp')
+        try:
+            with os.fdopen(fd, 'w') as f:
+                json.dump(statistics_cache, f, indent=4)
+            os.replace(tmp_path, STATISTICS_PATH)
+        finally:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception:
+                pass
+
+
+def flush_statistics_cache() -> None:
+    """Flush the in-memory statistics cache to disk (atomic replace)."""
+    global statistics_cache
+    with stats_cache_lock:
+        if statistics_cache is None:
+            return
+        # reuse write logic by dumping directly
+        dir_name = os.path.dirname(os.path.abspath(STATISTICS_PATH)) or '.'
+        fd, tmp_path = tempfile.mkstemp(dir=dir_name, prefix='statistics-', suffix='.tmp')
+        try:
+            with os.fdopen(fd, 'w') as f:
+                json.dump(statistics_cache, f, indent=4)
+            os.replace(tmp_path, STATISTICS_PATH)
+        finally:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception:
+                pass
+
+# Ensure we flush the in-memory cache at program exit
+atexit.register(flush_statistics_cache)
+
+# Periodic flush: flush the stats cache every STATS_FLUSH_INTERVAL seconds
+STATS_FLUSH_INTERVAL = 60  # seconds
+stats_flush_thread: threading.Thread | None = None
+stats_flush_stop = threading.Event()
+
+def _periodic_flush_loop() -> None:
+    """Background loop that flushes the statistics cache periodically.
+
+    Uses STATS_FLUSH_STOP.wait(timeout) so it can be stopped quickly.
+    """
+    while not stats_flush_stop.wait(STATS_FLUSH_INTERVAL):
+        try:
+            flush_statistics_cache()
+        except Exception:
+            # swallow exceptions; periodic flusher should not crash the program
+            pass
+
+def start_periodic_stats_flush() -> None:
+    """Start the background thread that periodically flushes stats.
+
+    Safe to call multiple times; subsequent calls are a no-op.
+    """
+    global stats_flush_thread
+    if stats_flush_thread is not None and stats_flush_thread.is_alive():
+        return
+    stats_flush_stop.clear()
+    t = threading.Thread(target=_periodic_flush_loop, name='stats-flush-thread', daemon=True)
+    stats_flush_thread = t
+    t.start()
+
+def stop_periodic_stats_flush() -> None:
+    """Signal the periodic flusher to stop and flush once more."""
+    stats_flush_stop.set()
+    try:
+        flush_statistics_cache()
+    except Exception:
+        pass
+
+# Ensure the periodic flusher is stopped at exit (stop then final flush is already registered)
+atexit.register(stop_periodic_stats_flush)
+
+def add_to_statistics(category: str, action: str, status: str, value: int) -> None:
+    """Adds a value to a statistics key in the in-memory cache.
+
+    The cache is flushed to disk at program exit. This reduces disk I/O cost for
+    frequent updates. Use `write_statistics` or `flush_statistics_cache` to force
+    a flush earlier.
+    """
+    global statistics_cache
+    # Ensure cache is initialized
+    if statistics_cache is None:
+        load_statistics()
+
+    # Ensure the cache is a dict for static checkers
+    try:
+        assert statistics_cache is not None
+        with stats_cache_lock:
+            if category not in statistics_cache:
+                statistics_cache[category] = {}
+            if action not in statistics_cache[category]:
+                statistics_cache[category][action] = {}
+            if status in statistics_cache[category][action]:
+                statistics_cache[category][action][status] += value
+            else:
+                statistics_cache[category][action][status] = value
+    except Exception as e:
+        print(f"Error updating statistics cache: {e}")
+
 
 def load_mailbox_emails() -> dict[str, list[str]]:
     """Loads mailbox to email mappings from mailbox_emails.json."""
@@ -103,6 +250,7 @@ def scan_ftp_folder(ftp_connection: ftplib.FTP, base_path: str, scanned_files: s
             new_files: A dict mapping mailbox numbers to lists of new file info dicts.
             current_files: A set of all file paths currently found on the FTP server.
     """
+    add_to_statistics('ftp', 'ftp_scan', 'attempts', 1)
     new_files = {}
     current_files = set()
     try:
@@ -133,6 +281,8 @@ def scan_ftp_folder(ftp_connection: ftplib.FTP, base_path: str, scanned_files: s
                                 mod_time_str = ftp_connection.voidcmd(f"MDTM {full_path}")[4:].strip()
                                 ftp_mod_time = parse_mitel_ftp_date(mod_time_str)
                             except ftplib.all_errors:
+                                print(f"Failed to retrieve modification time for {full_path}")
+                                add_to_statistics('ftp', 'ftp_file_modtime', 'fails', 1)
                                 ftp_mod_time = datetime.now()
 
                             # Ensure dict entry exists
@@ -142,7 +292,9 @@ def scan_ftp_folder(ftp_connection: ftplib.FTP, base_path: str, scanned_files: s
                             new_files[mailbox_number].append({'path': full_path, 'modified': ftp_mod_time})
                 except ftplib.error_perm:
                     continue
+        add_to_statistics('ftp', 'ftp_scan', 'successes', 1)
     except ftplib.all_errors as e:
+        add_to_statistics('ftp', 'ftp_scan', 'fails', 1)
         print(f"FTP error: {e}")
     finally:
         ftp_connection.cwd('/')
@@ -197,6 +349,7 @@ def convert_ulaw_to_mp3(ulaw_path: Path, output_path: Path) -> bool:
     Returns:
         bool: True if the conversion was successful, False otherwise.
     """
+    add_to_statistics('audio_conversion', 'ffmpeg_conversion', 'attempts', 1)
     try:
         # Prefer ffmpeg for reliable u-law decoding (matches Audacity import: U-Law, 8000 Hz, mono)
         ffmpeg_path = shutil.which('ffmpeg')
@@ -213,9 +366,11 @@ def convert_ulaw_to_mp3(ulaw_path: Path, output_path: Path) -> bool:
             ]
             proc = subprocess.run(cmd, capture_output=True, text=True)
             if proc.returncode == 0:
+                add_to_statistics('audio_conversion', 'ffmpeg_conversion', 'successes', 1)
                 print(f"Successfully converted {ulaw_path} to {output_path} using ffmpeg")
                 return True
             else:
+                add_to_statistics('audio_conversion', 'ffmpeg_conversion', 'fails', 1)
                 print(f"ffmpeg conversion failed (code {proc.returncode}). stderr:\n{proc.stderr}")
                 return False
         else:
@@ -223,6 +378,7 @@ def convert_ulaw_to_mp3(ulaw_path: Path, output_path: Path) -> bool:
             return False
 
     except Exception as e:
+        add_to_statistics('audio_conversion', 'ffmpeg_conversion', 'fails', 1)
         print(f"Audio conversion failed: {e}")
         return False
 
@@ -240,20 +396,32 @@ def transcribe_audio_whisper(model: whisper.Whisper, audio_path: str, timeout: f
         str: The transcribed text, or an empty string if it times out or fails.
     """
     print("Attempting to transcribe audio with Whisper...")
-    
+
     def transcribe():
+        add_to_statistics('transcription', 'whisper_transcription', 'attempts', 1)
         return model.transcribe(audio_path)
 
+    start_ts = datetime.now()
     with concurrent.futures.ThreadPoolExecutor() as executor:
         future = executor.submit(transcribe)
         try:
             result = future.result(timeout=timeout)
+            elapsed = datetime.now() - start_ts
+            # record elapsed time in milliseconds for better precision
+            add_to_statistics('transcription', 'whisper_transcription_time_seconds', 'total', int(elapsed.total_seconds()))
+            add_to_statistics('transcription', 'whisper_transcription', 'successes', 1)
             print("Transcription successful.")
             return str(result['text'])
         except concurrent.futures.TimeoutError:
+            elapsed = datetime.now() - start_ts
+            add_to_statistics('transcription', 'whisper_transcription_time_seconds', 'total', int(elapsed.total_seconds()))
+            add_to_statistics('transcription', 'whisper_transcription', 'timeouts', 1)
             print(f"Whisper transcription timed out after {timeout} seconds.")
             return ""
         except Exception as e:
+            elapsed = datetime.now() - start_ts
+            add_to_statistics('transcription', 'whisper_transcription_time_seconds', 'total', int(elapsed.total_seconds()))
+            add_to_statistics('transcription', 'whisper_transcription', 'fails', 1)
             print(f"Whisper transcription failed: {e}")
             return ""
 
@@ -263,10 +431,18 @@ def send_voicemail_email(access_token, recipient, mailbox, timestamp, audio_atta
     """
 
     config = load_config()
+    add_to_statistics('email', 'email_send', 'attempts', 1)
+
+    if mailbox == 0:
+        mailbox = 'General Mailbox'
 
     try:
         # Build message
-        subject = f"New Voicemail from Mailbox {mailbox}!"
+        subject = ''
+        if type(mailbox) is int:
+            subject = f"New Voicemail from Mailbox {mailbox}!"
+        else:
+            subject = f"New Voicemail from {mailbox}!"
 
         # CIDs for the images. This lets us include the image in the email, and reference it in the HTML.
         # Files will be loaded later, and attached with these IDs
@@ -295,12 +471,15 @@ def send_voicemail_email(access_token, recipient, mailbox, timestamp, audio_atta
 
         # Read and base64-encode audio attachment
         audio_attachment = None
+
         if audio_attachment_path is None:
             print("Warning! Audio file path is None, so no audio will be included!")
         else:
             with open(audio_attachment_path, 'rb') as f:
                 data = f.read()
+
             b64 = base64.b64encode(data).decode('utf-8')
+
             content_type, _ = mimetypes.guess_type(audio_attachment_path)
             if content_type is None:
                 content_type = 'application/octet-stream'
@@ -398,17 +577,29 @@ def send_voicemail_email(access_token, recipient, mailbox, timestamp, audio_atta
 
         resp = requests.post(url, headers=headers, json=payload)
         if resp.status_code in (200, 202):
-            print(f"Email sent successfully to {recipient} for mailbox {mailbox}.")
+            add_to_statistics('email', 'email_send', 'successes', 1)
+            try:
+                # measure the full JSON payload size (UTF-8 bytes) including base64 attachment content
+                json_payload = json.dumps(payload)
+                payload_size = len(json_payload.encode('utf-8'))
+                add_to_statistics('email', 'email_payload_bytes', 'total', payload_size)
+            except Exception:
+                # if for some reason measuring fails, don't block the success path
+                pass
             return True
         else:
+            add_to_statistics('email', 'email_send', 'fails', 1)
             print(f"Failed to send email to {recipient}. Status: {resp.status_code} Response: {resp.text}")
             return False
 
     except Exception as e:
+        add_to_statistics('email', 'email_send', 'fails', 1)
         print(f"An error occurred while sending email: {e}")
         return False
 
 def process_files(new_files_found, prev_scanned_files, config, access_token, ftp, whisper_model=None):
+
+    add_to_statistics('general', 'file_processing_runs', 'total', 1)
 
     mailbox_emails = load_mailbox_emails()
 
@@ -423,6 +614,7 @@ def process_files(new_files_found, prev_scanned_files, config, access_token, ftp
 
 
         for file_info in file_infos:
+            add_to_statistics('general', 'files_processed', 'total', 1)
             file_path = file_info['path']
             modified_time = file_info['modified']
             TEMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -430,9 +622,12 @@ def process_files(new_files_found, prev_scanned_files, config, access_token, ftp
 
             try:
                 with open(local_path, 'wb') as f:
+                    add_to_statistics('ftp', 'ftp_file_download', 'attempts', 1)
                     ftp.retrbinary(f"RETR {file_path}", f.write)
+                add_to_statistics('ftp', 'ftp_file_download', 'successes', 1)
             except ftplib.all_errors as e:
                 print(f"Failed to download {file_path}: {e}")
+                add_to_statistics('ftp', 'ftp_file_download', 'fails', 1)
                 continue
 
             mp3_path = TEMP_DIR / f"Mailbox {mailbox} on {modified_time.strftime('%Y-%m-%d at %H-%M-%S')}.mp3"
@@ -442,6 +637,9 @@ def process_files(new_files_found, prev_scanned_files, config, access_token, ftp
                 transcription = ""
                 if whisper_model:
                     transcription = transcribe_audio_whisper(whisper_model, str(mp3_path), timeout=300)  # 5 minutes timeout
+                else:
+                    add_to_statistics('transcription', 'whisper_transcription', 'skips', 1)
+                    print("No Whisper model loaded; skipping transcription.")
 
                 for recipient in recipients:
                     if not config['O365']['sender_address']:
@@ -495,6 +693,8 @@ def token_has_mail_send(app_token: str) -> bool:
     except Exception:
         return False
 
+
+
 # --- Main Execution ---
 def main():
     # 1) Load configuration
@@ -510,8 +710,29 @@ def main():
     #    f) Mark file as processed
     # 6) Save updated scanned files list
 
+    def cleanup():
+        # Close FTP connection
+        ftp.quit()
+        print("FTP connection closed.")
+        print("Scan complete.")
+
+        # Save updated scanned files list
+        write_scanned_files(current_files_on_ftp)
+
+        remove_temp_dir()
+
+        script_end_time = datetime.now()
+        total_elapsed = script_end_time - script_start_time
+        print(f"Script completed in {int(total_elapsed.total_seconds())} seconds.")
+        add_to_statistics('general', 'script_run_time_seconds', 'total', int(total_elapsed.total_seconds()))
+
+
+    script_start_time = datetime.now()
+
 
     print("Loading configuration...")
+
+    add_to_statistics('general', 'script_runs', 'total', 1)
 
     if not os.path.exists('config.ini'):
         print("Error: config.ini file not found. The contents of config_template.ini have been copied to config.ini.")
@@ -533,8 +754,11 @@ def main():
             Sending from {config['O365']['sender_address']}
             Scanning FTP server {config['FTP']['host']} under path {config['FTP']['base_path']}
             Using Whisper model: {WHISPER_MODEL}
-""")  
-    
+""")
+
+    print("Starting periodic statistics flush thread...")
+    start_periodic_stats_flush()
+
     remove_temp_dir()
 
     ffmpeg_path = shutil.which('ffmpeg')
@@ -552,11 +776,14 @@ def main():
         return
 
     try:
+        add_to_statistics('ftp', 'ftp_connection', 'attempts', 1)
         ftp = ftplib.FTP(config['FTP']['host'])
         ftp.login(user=config['FTP']['user'], passwd=config['FTP']['password'])
+        add_to_statistics('ftp', 'ftp_connection', 'successes', 1)
         print("Connected to FTP server.")
     except ftplib.all_errors as e:
         print(f"Failed to connect to FTP server: {e}")
+        add_to_statistics('ftp', 'ftp_connection', 'fails', 1)
         return
 
     print("Reading previously scanned files...")
@@ -572,9 +799,7 @@ def main():
         previously_scanned_files_set = current_files_on_ftp
         write_scanned_files(previously_scanned_files_set)
         print(f"Recorded {len(previously_scanned_files_set)} existing files as processed.")
-        ftp.quit()
-        print("FTP connection closed.")
-        print("Scan complete.")
+        cleanup()
         return
 
     # Find new files since last scan, and collect current files on FTP
@@ -588,9 +813,7 @@ def main():
 
     if not new_files_found:
         print("No new files found.")
-        ftp.quit()
-        print("FTP connection closed.")
-        print("Scan complete.")
+        cleanup()
         return
 
 
@@ -610,14 +833,17 @@ def main():
     authority = f"https://login.microsoftonline.com/{tenant}"
 
     print("Signing in to Microsoft Graph...")
+    add_to_statistics('O365', 'token_acquisition', 'attempts', 1)
 
     app = msal.ConfidentialClientApplication(client_id=client_id, client_credential=client_secret, authority=authority)
     result = app.acquire_token_for_client(scopes=scopes)
 
     if not result or 'access_token' not in result:
+        add_to_statistics('O365', 'token_acquisition', 'fails', 1)
         print("Failed to acquire app-only token. Result:", result)
         return
     else:
+        add_to_statistics('O365', 'token_acquisition', 'successes', 1)
         print("Acquired Microsoft authentication token.")
 
     access_token = result['access_token']
@@ -658,15 +884,7 @@ def main():
     print("Processing new files...")
     process_files(new_files_found, previously_scanned_files_set, config, access_token, ftp, whisper_model=whisper_model)
 
-    # Close FTP connection
-    ftp.quit()
-    print("FTP connection closed.")
-    print("Scan complete.")
-
-    # Save updated scanned files list
-    write_scanned_files(current_files_on_ftp)
-
-    remove_temp_dir()
+    cleanup()
 
 if __name__ == "__main__":
     main()

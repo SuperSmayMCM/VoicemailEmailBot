@@ -225,6 +225,21 @@
 
         function fmtBytes(b) { if (!b && b !== 0) return '—'; const mb = b / 1024 / 1024; return mb >= 1 ? mb.toFixed(2) + ' MB' : (b / 1024).toFixed(1) + ' KB'; }
 
+        function fmtDate(timestamp) {
+            const now = new Date(timestamp * 1000);
+            const month = (now.getMonth() + 1).toString().padStart(2, '0'); // Months are 0-indexed, so add 1
+            const day = now.getDate().toString().padStart(2, '0');
+            const year = now.getFullYear().toString().slice(-2); // Get last two digits of the year
+
+            const hours = now.getHours().toString().padStart(2, '0');
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            const seconds = now.getSeconds().toString().padStart(2, '0');
+
+            const formattedDate = `${month}/${day}/${year} at ${hours}:${minutes}:${seconds}`;
+
+            return formattedDate;
+        }
+
         function buildCard(title, value, sub) {
             const el = document.createElement('div'); el.className = 'card';
             el.innerHTML = `<div class="title">${title}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}`;
@@ -283,6 +298,9 @@
             if (conversion === "bytes_to_human_readable") {
                 formatted_value = fmtBytes(value);
             }
+            if (conversion === "timestamp_range_to_human_readable") {
+                formatted_value = fmtDate(value);
+            }
 
             return formatted_value + ' ' + (unit || '');
         }
@@ -331,6 +349,7 @@
                             data,
                             element.main.display_value.field,
                             element.main.display_value.unit,
+                            element.main.display_value.conversion || ""
                         );
                     } else if (element.main.display_ratio) {
                         main = buildStringDisplayRatio(

@@ -25,7 +25,7 @@
             "title": "Last run time",
             "main": {
                 "display_value": {
-                    "field": "general.last_run_time",
+                    "field": "general.last_run_time.start",
                     "conversion": "timestamp_range_to_human_readable"
                 }
             }

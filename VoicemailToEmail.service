@@ -17,5 +17,11 @@ ExecStart=/home/mcm/miniconda3/envs/VoicemailToEmail/bin/gunicorn --bind 0.0.0.0
 
 Restart=on-failure
 
+# Ensure Python output is unbuffered so logs appear in journalctl in real time
+Environment=PYTHONUNBUFFERED=1
+# Send stdout/stderr to the journal immediately
+StandardOutput=journal
+StandardError=journal
+
 [Install]
 WantedBy=multi-user.target

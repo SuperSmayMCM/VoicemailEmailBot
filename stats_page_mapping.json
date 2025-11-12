@@ -22,6 +22,15 @@
             }
         },
         {
+            "title": "Last run time",
+            "main": {
+                "display_value": {
+                    "field": "general.last_run_time",
+                    "conversion": "timestamp_range_to_human_readable"
+                }
+            }
+        },
+        {
             "title": "FTP Operations",
             "main": {
                 "display_ratio": {

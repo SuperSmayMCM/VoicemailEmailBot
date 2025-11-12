@@ -211,6 +211,15 @@ def get_statistics():
             return json.load(f)
     return {}
 
+def get_stats_page_map():
+    """Loads statistics page mappings from stats_page_mapping.json."""
+    stats_page_map_path = 'stats_page_mapping.json'
+    if os.path.exists(stats_page_map_path):
+        with open(stats_page_map_path, 'r') as f:
+            return json.load(f)
+    return {}
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -269,6 +278,13 @@ def statistics():
         return redirect(url_for('login'))
     # The initial content is now just a placeholder, JS will fetch the real log.
     return render_template('statistics.html', stats_content="Loading statistics...")
+
+@app.route('/stats_page_mapping')
+def stats_page_mapping():
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+    # The initial content is now just a placeholder, JS will fetch the real log.
+    return get_stats_page_map()
 
 @app.route('/get_log_data')
 def get_log_data():

@@ -1,0 +1,105 @@
+{
+    "cards": [
+        {
+            "title": "Script runs",
+            "main": {
+                "display_value": {
+                    "field": "general.script_runs.total",
+                    "unit": "runs"
+                }
+            },
+            "sub_fields": {
+                "display_value": [
+                    {
+                        "field": "general.script_run_time_seconds.total",
+                        "unit": "seconds run time"
+                    },
+                    {
+                        "field": "general.files_processed.total",
+                        "unit": "files processed"
+                    }
+                ]
+            }
+        },
+        {
+            "title": "FTP Operations",
+            "main": {
+                "display_ratio": {
+                    "numerator_field": "ftp.ftp_file_download.successes",
+                    "denominator_field": "ftp.ftp_file_download.attempts",
+                    "unit": "files processed"
+                }
+            }
+        },
+        {
+            "title": "FTP Operations",
+            "main": {
+                "display_ratio": {
+                    "numerator_field": "ftp.ftp_file_download.successes",
+                    "denominator_field": "ftp.ftp_file_download.attempts",
+                    "unit": "successful downloads"
+                }
+            },
+            "sub_fields": {
+                "display_ratio": [
+                    {
+                        "numerator_field": "ftp.ftp_scan.successes",
+                        "denominator_field": "ftp.ftp_scan.attempts",
+                        "unit": "successful scans"
+                    },
+                    {
+                        "numerator_field": "ftp.ftp_connection.successes",
+                        "denominator_field": "ftp.ftp_connection.attempts",
+                        "unit": "successful connections"
+                    }
+                ]
+            }
+        },
+        {
+            "title": "Audio Conversions",
+            "main": {
+                "display_ratio": {
+                    "numerator_field": "audio_conversion.ffmpeg_conversion.successes",
+                    "denominator_field": "audio_conversion.ffmpeg_conversion.attempts",
+                    "unit": "successful conversions"
+                }
+            }
+        },
+        {
+            "title": "Transcriptions",
+            "main": {
+                "display_ratio": {
+                    "numerator_field": "transcription.whisper_transcription.successes",
+                    "denominator_field": "transcription.whisper_transcription.attempts",
+                    "unit": "successful transcriptions"
+                }
+            },
+            "sub_fields": {
+                "display_value": [
+                    {
+                        "field": "transcription.whisper_transcription_time_seconds.total",
+                        "unit": "seconds transcribing"
+                    }
+                ]
+            }
+        },
+        {
+            "title": "Emails Sent",
+            "main": {
+                "display_ratio": {
+                    "numerator_field": "email.email_send.successes",
+                    "denominator_field": "email.email_send.attempts",
+                    "unit": "successful emails"
+                }
+            },
+            "sub_fields": {
+                "display_value": [
+                    {
+                        "field": "email.email_payload_bytes.total",
+                        "conversion": "bytes_to_human_readable"
+                    }
+                ]
+            }
+        }
+    ]
+}

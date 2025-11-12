@@ -30,7 +30,7 @@ STATISTICS_PATH = 'statistics.json'
 statistics_cache: dict | None = None
 stats_cache_lock = threading.Lock()
 
-# --- Configuration Loader ---
+# --- File Loaders ---
 def load_config(config_path='config.ini') -> configparser.ConfigParser:
     """Loads configuration from the config.ini file."""
     config = configparser.ConfigParser()
@@ -82,6 +82,65 @@ def write_statistics(stats: dict) -> None:
             except Exception:
                 pass
 
+def load_mailbox_emails() -> dict[str, list[str]]:
+    """Loads mailbox to email mappings from mailbox_emails.json."""
+    if os.path.exists('mailbox_emails.json'):
+        with open('mailbox_emails.json', 'r') as f:
+            mailbox_emails = json.load(f)
+            config = load_config()
+            domain = config['O365'].get('recipient_domain', '').strip()
+            for mailbox, emails in mailbox_emails.items():
+                valid_emails = []
+                for i in range(len(emails)):
+                    email = emails[i]
+                    # If emails are valid, continue
+                    if '@' in email and '.' in email.split('@')[-1]:
+                        valid_emails.append(email)
+                    # Else, if they look like just a username, append the domain from config.ini
+                    elif domain and '@' not in email:
+                        full_email = f"{email}@{domain}"
+                        valid_emails.append(full_email)
+                    # Otherwise, skip invalid emails
+                    elif not domain:
+                        print(f"Warning: No default email domain configured. Skipping email '{email}'.")
+                    else:
+                        print(f"Warning: Invalid email address '{email}' for mailbox {mailbox}. Skipping.")
+                # I know, I know, modifying a list while iterating over it is bad practice.
+                mailbox_emails[mailbox] = valid_emails
+            return mailbox_emails
+    return {}
+
+def get_git_commit_id() -> str:
+    """Gets the current git commit ID, or 'unknown' if it cannot be determined."""
+    try:
+        commit_id = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('utf-8').strip()
+        return commit_id
+    except Exception:
+        return "unknown"
+
+def read_scanned_files() -> set[str]:
+    """
+    Reads the persistent list of scanned files.
+    
+    Returns:
+        A set of scanned files
+    """
+    if os.path.exists(SCANNED_FILES_JSON_PATH):
+        with open(SCANNED_FILES_JSON_PATH, 'r') as f:
+            return set(json.load(f))
+    return set()
+    
+def write_scanned_files(file_list: set[str]) -> None:
+    """
+    Writes the list of scanned files to a JSON file.
+
+    Args:
+        file_list (set[str]): The list of scanned files.
+    """
+    with open(SCANNED_FILES_JSON_PATH, 'w') as f:
+        json.dump(list(file_list), f, indent=2)
+
+# --- Statistics Module ---
 
 def flush_statistics_cache() -> None:
     """Flush the in-memory statistics cache to disk (atomic replace)."""
@@ -174,65 +233,29 @@ def add_to_statistics(category: str, action: str, status: str, value: int) -> No
     except Exception as e:
         print(f"Error updating statistics cache: {e}")
 
+def set_statistics(category: str, action: str, status: str, value: int) -> None:
+    """Sets a value to a statistics key in the in-memory cache.
 
-def load_mailbox_emails() -> dict[str, list[str]]:
-    """Loads mailbox to email mappings from mailbox_emails.json."""
-    if os.path.exists('mailbox_emails.json'):
-        with open('mailbox_emails.json', 'r') as f:
-            mailbox_emails = json.load(f)
-            config = load_config()
-            domain = config['O365'].get('recipient_domain', '').strip()
-            for mailbox, emails in mailbox_emails.items():
-                valid_emails = []
-                for i in range(len(emails)):
-                    email = emails[i]
-                    # If emails are valid, continue
-                    if '@' in email and '.' in email.split('@')[-1]:
-                        valid_emails.append(email)
-                    # Else, if they look like just a username, append the domain from config.ini
-                    elif domain and '@' not in email:
-                        full_email = f"{email}@{domain}"
-                        valid_emails.append(full_email)
-                    # Otherwise, skip invalid emails
-                    elif not domain:
-                        print(f"Warning: No default email domain configured. Skipping email '{email}'.")
-                    else:
-                        print(f"Warning: Invalid email address '{email}' for mailbox {mailbox}. Skipping.")
-                # I know, I know, modifying a list while iterating over it is bad practice.
-                mailbox_emails[mailbox] = valid_emails
-            return mailbox_emails
-    return {}
+    The cache is flushed to disk at program exit. This reduces disk I/O cost for
+    frequent updates. Use `write_statistics` or `flush_statistics_cache` to force
+    a flush earlier.
+    """
+    global statistics_cache
+    # Ensure cache is initialized
+    if statistics_cache is None:
+        load_statistics()
 
-def get_git_commit_id() -> str:
-    """Gets the current git commit ID, or 'unknown' if it cannot be determined."""
+    # Ensure the cache is a dict for static checkers
     try:
-        commit_id = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('utf-8').strip()
-        return commit_id
-    except Exception:
-        return "unknown"
-
-# --- File Management Module ---
-def read_scanned_files() -> set[str]:
-    """
-    Reads the persistent list of scanned files.
-    
-    Returns:
-        A set of scanned files
-    """
-    if os.path.exists(SCANNED_FILES_JSON_PATH):
-        with open(SCANNED_FILES_JSON_PATH, 'r') as f:
-            return set(json.load(f))
-    return set()
-    
-def write_scanned_files(file_list: set[str]) -> None:
-    """
-    Writes the list of scanned files to a JSON file.
-
-    Args:
-        file_list (set[str]): The list of scanned files.
-    """
-    with open(SCANNED_FILES_JSON_PATH, 'w') as f:
-        json.dump(list(file_list), f, indent=2)
+        assert statistics_cache is not None
+        with stats_cache_lock:
+            if category not in statistics_cache:
+                statistics_cache[category] = {}
+            if action not in statistics_cache[category]:
+                statistics_cache[category][action] = {}
+            statistics_cache[category][action][status] = value
+    except Exception as e:
+        print(f"Error updating statistics cache: {e}")
 
 # --- FTP Scanner Module ---
 def scan_ftp_folder(ftp_connection: ftplib.FTP, base_path: str, scanned_files: set[str]) -> tuple[dict[str, list[dict]], set[str]]:
@@ -723,11 +746,12 @@ def main():
 
         script_end_time = datetime.now()
         total_elapsed = script_end_time - script_start_time
-        print(f"Script completed in {int(total_elapsed.total_seconds())} seconds.")
         add_to_statistics('general', 'script_run_time_seconds', 'total', int(total_elapsed.total_seconds()))
+        set_statistics('general', 'last_run_time', 'end', int(script_end_time.timestamp()))
 
 
     script_start_time = datetime.now()
+    set_statistics('general', 'last_run_time', 'start', int(script_start_time.timestamp()))
 
 
     print("Loading configuration...")

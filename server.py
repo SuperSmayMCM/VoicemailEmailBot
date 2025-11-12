@@ -25,8 +25,9 @@ except Exception as e:
     print(f"[Server] Could not get git commit ID: {e}")
 
 # --- Globals for Scheduler ---
-current_running_log = "Scheduler has not run yet."
-last_run_log = ""
+current_web_log = "Scheduler has not run yet."
+last_print_log = ""
+silence_message_printed = False
 scheduler_thread_instance = None
 stop_scheduler_flag = threading.Event()
 log_lock = threading.Lock() # To safely update the log from the thread
@@ -36,13 +37,17 @@ script_execution_lock = threading.Lock() # To prevent concurrent script runs
 Runs the main.py script and captures its output in real-time.
 Uses a lock to prevent concurrent executions.
 
-Captures stdout and stderr and stores it in current_running_log.
+Captures stdout and stderr and stores it in current_web_log.
 Also stores output and checks if the output was different than last run. If it was, it prints it to the console. Otherwise it only prints a message saying no changes to reduce log noise.
+
+Args:
+    manual_trigger (bool): Whether this run was manually triggered via the web UI. If so, prints an additional message.
 '''
-def run_main_script():
+def run_main_script(manual_trigger=False):
     """Runs the main.py script and captures its output in real-time."""
-    global current_running_log
-    global last_run_log
+    global current_web_log
+    global last_print_log
+    global silence_message_printed
     current_print_log = ""
 
 
@@ -50,19 +55,19 @@ def run_main_script():
         print("[Scheduler] Attempted to run script while it was already running.")
         # Log this attempt to the user-visible log
         with log_lock:
-            # Use a temporary variable to build the string to avoid repeated lock acquisitions
-            current_log = current_running_log
-            current_log += f"\n--- Manual run request denied: Script is already running. ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ---\n"
-            current_running_log = current_log
+            current_web_log += f"\n--- Manual run request denied: Script is already running. ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ---\n"
         return
 
     try:
-        print(f"[Scheduler] Running {MAIN_SCRIPT} script with timeout...")
+        if manual_trigger:
+            print(f"[Manual Trigger] Running {MAIN_SCRIPT} script with timeout...")
+
+        current_print_log += f"[Scheduler] Running {MAIN_SCRIPT} script with timeout..."
         
         # Reset log for the new run
         log_output = f"--- Log from {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n"
         with log_lock:
-            current_running_log = log_output
+            current_web_log = log_output
         
         try:
             python_executable = sys.executable
@@ -93,7 +98,7 @@ def run_main_script():
                     # If we got a line, append it to the shared log immediately
                     if line:
                         with log_lock:
-                            current_running_log += line
+                            current_web_log += line
 
                         current_print_log += f"{prepend_line} {line}"
                         # Optional server-side echo for debugging
@@ -110,7 +115,7 @@ def run_main_script():
                     remaining = process.stdout.read()
                     if remaining:
                         with log_lock:
-                            current_running_log += remaining
+                            current_web_log += remaining
                         current_print_log += ''.join(f"{prepend_line} {l}\n" for l in remaining.split('\n') if l)
             except Exception:
                 pass
@@ -118,21 +123,25 @@ def run_main_script():
             process.wait() # Wait for the process to complete
 
             with log_lock:
-                current_running_log += f"\n--- Process finished at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---"
+                current_web_log += f"\n--- Process finished at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---"
             
             # Only print to console if the log changed
-            if current_print_log != last_run_log:
+            if current_print_log != last_print_log:
                 print(current_print_log)
-                last_run_log = current_print_log
-            else:
-                print(f"[Scheduler] No changes in output from last run of {MAIN_SCRIPT}.")
+                last_print_log = current_print_log
+                silence_message_printed = False
+                print(f"[Scheduler] {MAIN_SCRIPT} finished.")
+            elif not silence_message_printed:
+                print(f"[Scheduler] {MAIN_SCRIPT} finished.")
+                print(f"[Scheduler] No changes in output from last run of {MAIN_SCRIPT}. Silencing further identical messages. Check statistics for last run time.")
+                silence_message_printed = True
+
             
-            print(f"[Scheduler] {MAIN_SCRIPT} finished.")
 
         except Exception as e:
             error_message = f"--- Scheduler failed to execute {MAIN_SCRIPT} at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n{e}"
             with log_lock:
-                current_running_log = error_message
+                current_web_log = error_message
             print(f"[Scheduler] Failed to run {MAIN_SCRIPT}: {e}")
     finally:
         script_execution_lock.release()
@@ -251,7 +260,7 @@ def get_log_data():
     if not session.get('logged_in'):
         return "Not authorized", 401
     with log_lock:
-        return current_running_log
+        return current_web_log
 
 @app.route('/save', methods=['POST'])
 def save_settings():
@@ -332,7 +341,7 @@ def run_now():
         return redirect(url_for('login'))
     
     # Run in a separate thread to avoid blocking the UI
-    threading.Thread(target=run_main_script).start()
+    threading.Thread(target=run_main_script, args=(True,)).start()
     flash('The script is running in the background. Check the logs page for output shortly.', 'info')
     return redirect(url_for('index'))
 

@@ -203,6 +203,14 @@ def save_mailbox_emails(data):
     with open(MAILBOX_EMAILS_PATH, 'w') as f:
         json.dump(data, f, indent=4)
 
+def get_statistics():
+    """Loads statistics from statistics.json."""
+    stats_path = 'statistics.json'
+    if os.path.exists(stats_path):
+        with open(stats_path, 'r') as f:
+            return json.load(f)
+    return {}
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -255,12 +263,26 @@ def logs():
     # The initial content is now just a placeholder, JS will fetch the real log.
     return render_template('logs.html', log_content="Loading logs...")
 
+@app.route('/statistics')
+def statistics():
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+    # The initial content is now just a placeholder, JS will fetch the real log.
+    return render_template('statistics.html', stats_content="Loading statistics...")
+
 @app.route('/get_log_data')
 def get_log_data():
     if not session.get('logged_in'):
         return "Not authorized", 401
     with log_lock:
         return current_web_log
+
+@app.route('/get_statistics_data')
+def get_statistics_data():
+    if not session.get('logged_in'):
+        return "Not authorized", 401
+    with log_lock:
+        return get_statistics()
 
 @app.route('/save', methods=['POST'])
 def save_settings():

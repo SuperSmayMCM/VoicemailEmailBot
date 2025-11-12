@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Script Statistics</title>
+    <style>
+        :root{
+            --bg: #f4f6fb;
+            --card: #ffffff;
+            --muted: #6b7280;
+            --accent: #2563eb;
+            --success: #16a34a;
+            --glass: rgba(255,255,255,0.6);
+        }
+        html,body{height:100%;}
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: linear-gradient(180deg,var(--bg),#eef2ff); color: #111827; margin: 0; padding: 24px; }
+        .wrap { max-width:1100px; margin: 0 auto; }
+        header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
+        h1 { margin:0; font-size:1.25rem; color:var(--accent); }
+        .controls { display:flex; gap:8px; align-items:center; }
+        .btn { background:var(--accent); color:#fff; border:none; padding:8px 12px; border-radius:8px; text-decoration:none; font-weight:600; cursor:pointer; }
+        .btn.secondary { background:#e6eefc; color:var(--accent); }
+
+        .summary { display:flex; gap:12px; align-items:center; margin-bottom:18px; }
+        .last-updated { color:var(--muted); font-size:0.9rem; }
+
+        .stats-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:14px; }
+        .card { background:var(--card); border-radius:12px; padding:14px; box-shadow: 0 6px 18px rgba(16,24,40,0.06); display:flex; flex-direction:column; gap:8px; }
+        .card .title { color:var(--muted); font-size:0.85rem; }
+        .card .value { font-size:1.4rem; font-weight:700; color:#0f172a; }
+        .sub { color:var(--muted); font-size:0.85rem; }
+
+        .row { display:flex; gap:10px; align-items:center; justify-content:space-between; }
+        .mini { display:flex; gap:8px; align-items:center; }
+        .badge { background:#eefaf1; color:var(--success); padding:4px 8px; border-radius:999px; font-weight:700; font-size:0.85rem; }
+
+        .raw-area { margin-top:14px; border-radius:8px; overflow:hidden; }
+        pre { margin:0; background:#0b1220; color:#e6eef6; padding:12px; font-family: "SF Mono", "Fira Code", Consolas, monospace; max-height:320px; overflow:auto; }
+
+        .footer { margin-top:14px; color:var(--muted); font-size:0.9rem; }
+
+        @media (max-width:520px){
+            header { flex-direction:column; align-items:flex-start; gap:8px; }
+            .summary { flex-direction:column; align-items:flex-start; }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <header>
+            <div>
+                <h1>Script Execution Statistics</h1>
+                <div class="summary">
+                    <div class="last-updated" id="last-updated">Loading…</div>
+                </div>
+            </div>
+            <div class="controls">
+                <a href="/" class="btn secondary">Back to Settings</a>
+                <button id="refreshBtn" class="btn">Refresh</button>
+            </div>
+        </header>
+
+        <main>
+            <section class="stats-grid" id="statsGrid">
+                <!-- cards injected here -->
+            </section>
+
+            <div class="raw-area" id="rawArea" hidden>
+                <pre id="rawPre">Loading statistics...</pre>
+            </div>
+
+            <div class="footer">Auto-refresh every 10s. If the server returns plain text, the raw output will appear above.</div>
+        </main>
+    </div>
+
+    <script>
+        const statsGrid = document.getElementById('statsGrid');
+        const rawArea = document.getElementById('rawArea');
+        const rawPre = document.getElementById('rawPre');
+        const lastUpdated = document.getElementById('last-updated');
+        const refreshBtn = document.getElementById('refreshBtn');
+
+        function fmtNumber(n){ return (n===undefined || n===null) ? '—' : n.toLocaleString(); }
+        function fmtBytes(b){ if(!b && b!==0) return '—'; const mb = b/1024/1024; return mb>=1 ? mb.toFixed(2)+' MB' : (b/1024).toFixed(1)+' KB'; }
+
+        function buildCard(title, value, sub){
+            const el = document.createElement('div'); el.className = 'card';
+            el.innerHTML = `<div class="title">${title}</div><div class="value">${value}</div>${sub?`<div class="sub">${sub}</div>`:''}`;
+            return el;
+        }
+
+        async function fetchStatistics(){
+            try{
+                const res = await fetch('/get_statistics_data');
+                if(!res.ok){ throw new Error('Server: '+res.status); }
+
+                const ct = res.headers.get('content-type') || '';
+                if(ct.includes('application/json')){
+                    const data = await res.json();
+                    renderFromJson(data);
+                } else {
+                    // try to parse as JSON text, otherwise show raw text
+                    const text = await res.text();
+                    try{ const data = JSON.parse(text); renderFromJson(data); }
+                    catch(e){ showRaw(text); }
+                }
+                const now = new Date(); lastUpdated.textContent = 'Last updated: '+now.toLocaleString();
+            }catch(err){
+                showRaw('Error fetching statistics: '+err.message);
+                lastUpdated.textContent = 'Last update: failed';
+            }
+        }
+
+        function showRaw(text){ rawArea.hidden = false; rawPre.textContent = text; statsGrid.innerHTML = ''; }
+
+        function renderFromJson(data){
+            rawArea.hidden = true; rawPre.textContent = '';
+            statsGrid.innerHTML = '';
+
+            // defensive pathing for missing fields
+            const gen = (data && data.general) || {};
+            const ftp = (data && data.ftp) || {};
+            const email = (data && data.email) || {};
+            const audio = (data && data.audio_conversion) || {};
+            const trans = (data && data.transcription) || {};
+
+            const scriptRuns = gen.script_runs && gen.script_runs.total;
+            const filesProcessed = gen.files_processed && gen.files_processed.total;
+
+            statsGrid.appendChild(buildCard('Script runs', fmtNumber(scriptRuns), filesProcessed ? `${fmtNumber(filesProcessed)} files processed` : ''));
+
+            // FTP card: attempts / successes
+            const ftpConn = ftp.ftp_connection || {};
+            const ftpScan = ftp.ftp_scan || {};
+            const ftpDownload = ftp.ftp_file_download || {};
+            const ftpSub = `Connections ${fmtNumber(ftpConn.successes||0)}/${fmtNumber(ftpConn.attempts||0)} • Scans ${fmtNumber(ftpScan.successes||0)}/${fmtNumber(ftpScan.attempts||0)}`;
+            statsGrid.appendChild(buildCard('FTP activity', `${fmtNumber(ftpDownload.successes||0)} downloaded`, ftpSub));
+
+            // transcription timing
+            const transTimeSec = (trans.whisper_transcription_time_seconds && trans.whisper_transcription_time_seconds.total) || Math.round(((trans.whisper_transcription_time_ms && trans.whisper_transcription_time_ms.total)||0)/1000);
+            const transAttempts = (trans.whisper_transcription && trans.whisper_transcription.attempts) || 0;
+            statsGrid.appendChild(buildCard('Transcription', `${fmtNumber(transAttempts)} runs`, `Total time: ${fmtNumber(transTimeSec)} s`));
+
+            // audio conversion
+            const ffmpeg = audio.ffmpeg_conversion || {};
+            statsGrid.appendChild(buildCard('Audio conversion', `${fmtNumber(ffmpeg.successes||0)} success`, `Attempts: ${fmtNumber(ffmpeg.attempts||0)}`));
+
+            // Email
+            const emailSend = email.email_send || {};
+            const payload = (email.email_payload_bytes && email.email_payload_bytes.total) || 0;
+            statsGrid.appendChild(buildCard('Emails sent', `${fmtNumber(emailSend.successes||0)}/${fmtNumber(emailSend.attempts||0)}`, `Payload: ${fmtBytes(payload)}`));
+
+            // O365 / tokens
+            const o365 = (data && data.O365) || {};
+            const tokens = (o365.token_acquisition && o365.token_acquisition.successes) || 0;
+            statsGrid.appendChild(buildCard('Auth tokens', `${fmtNumber(tokens)} acquired`, 'O365 token acquisitions'));
+
+            // small raw dump button/area: toggle to view raw JSON
+            const rawCard = document.createElement('div'); rawCard.className = 'card';
+            const btn = document.createElement('button'); btn.className='btn secondary'; btn.textContent = 'View raw JSON';
+            btn.onclick = ()=>{ rawArea.hidden = !rawArea.hidden; if(!rawArea.hidden) rawPre.textContent = JSON.stringify(data, null, 2); };
+            rawCard.appendChild(btn);
+            statsGrid.appendChild(rawCard);
+        }
+
+        // initial fetch + interval
+        fetchStatistics();
+        const intervalId = setInterval(fetchStatistics, 10000);
+
+        // UI handlers
+        refreshBtn.addEventListener('click', ()=>{ fetchStatistics(); });
+
+        // cleanup on unload (if SPA), not strictly necessary here
+        window.addEventListener('beforeunload', ()=> clearInterval(intervalId));
+    </script>
+</body>
+</html>

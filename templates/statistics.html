@@ -215,8 +215,10 @@
         const refreshBtn = document.getElementById('refreshBtn');
         const buttonArea = document.querySelector('.button-area');
 
+
         // store latest JSON and raw view state so raw JSON can remain open across refreshes
         let latestJsonData = null;
+        let pageMap = {}
         let rawVisible = false;
 
         function fmtNumber(n) { return (n === undefined || n === null) ? '—' : n.toLocaleString(); }
@@ -233,6 +235,8 @@
             try {
                 const res = await fetch('/get_statistics_data');
                 if (!res.ok) { throw new Error('Server: ' + res.status); }
+
+                await fetch_stats_page_map();
 
                 const ct = res.headers.get('content-type') || '';
                 if (ct.includes('application/json')) {
@@ -257,11 +261,11 @@
                 const res = await fetch('/stats_page_mapping');
                 if (!res.ok) { throw new Error('Server: ' + res.status); }
                 const jsonData = await res.json();
-                return jsonData
+                pageMap = jsonData
             } catch (e) {
                 // Do nothing. Stats simply display in the automatic form
                 console.error('Error fetching stats page map:', e);
-                return {}
+                pageMap = {}
             }
         }
 
@@ -302,12 +306,22 @@
             latestJsonData = data;
             // if user hasn't opened the raw view, hide the raw area
             if (!rawVisible) { rawArea.hidden = true; rawPre.textContent = ''; }
+
+            
+
             statsGrid.innerHTML = '';
 
-            page_map = await fetch_stats_page_map()
+            // If cards not defined, show raw JSON
+            if (!pageMap.cards) {
+                rawVisible = true;
+                rawArea.hidden = !rawVisible;
+                rawPre.textContent = JSON.stringify(latestJsonData, null, 2);
+                buttonArea.innerHTML = '';
+                return;
+            }
 
             // Create page from mapping
-            page_map.cards.forEach(element => {
+            pageMap.cards.forEach(element => {
 
                 let title = element.title || key;
                 let main = "No Data";

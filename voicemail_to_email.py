@@ -30,7 +30,7 @@ STATISTICS_PATH = 'statistics.json'
 statistics_cache: dict | None = None
 stats_cache_lock = threading.Lock()
 
-# --- File Loaders ---
+# --- File Management ---
 def load_config(config_path='config.ini') -> configparser.ConfigParser:
     """Loads configuration from the config.ini file."""
     config = configparser.ConfigParser()
@@ -139,6 +139,12 @@ def write_scanned_files(file_list: set[str]) -> None:
     """
     with open(SCANNED_FILES_JSON_PATH, 'w') as f:
         json.dump(list(file_list), f, indent=2)
+
+def remove_temp_dir():
+    if TEMP_DIR.exists() and TEMP_DIR.is_dir():
+        print("Cleaning up temporary files...")
+        shutil.rmtree(TEMP_DIR)
+
 
 # --- Statistics Module ---
 
@@ -717,11 +723,6 @@ def acquire_token(client_id: str, client_secret: str, tenant: str) -> str | None
     return access_token
 
     
-
-def remove_temp_dir():
-    if TEMP_DIR.exists() and TEMP_DIR.is_dir():
-        print("Cleaning up temporary files...")
-        shutil.rmtree(TEMP_DIR)
 
 
 def token_has_mail_send(app_token: str) -> bool:

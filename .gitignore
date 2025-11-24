@@ -3,6 +3,7 @@ __pycache__/
 config.ini
 scanned_files.json
 mailbox_emails.json
+custom_mailbox_names.json
 statistics.json
 msal*
 temp/

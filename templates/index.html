@@ -45,11 +45,11 @@
                 <p id="recipient_domain_display"> Configured Default Email Domain: @{{ config.O365.recipient_domain | default('') }}</p>
                 <div id="mailbox-entries" class="mailbox-entries">
                     {% for mailbox, emails in mailbox_emails.items() %}
-                    <div class="mailbox-entry" id="entry-{{ loop.index0 }}">
+                    <div class="mailbox-entry" id="entry-{{ loop.index0 }}" data-container="mailbox">
                         <input type="text" name="mailbox_id_{{ loop.index0 }}" value="{{ mailbox }}">
                         <input type="text" name="emails_{{ loop.index0 }}" value="{{ emails|join(', ') }}" placeholder="comma-separated emails">
                         <input type="hidden" name="original_mailbox_id_{{ loop.index0 }}" value="{{ mailbox }}">
-                        <button type="button" class="remove-btn" onclick="removeMailbox('entry-{{ loop.index0 }}')">Remove</button>
+                        <button type="button" class="remove-btn" onclick="removeEntry(this)">Remove</button>
                     </div>
                     {% endfor %}
                 </div>
@@ -58,6 +58,28 @@
                 <div class="mailbox-entry">
                      <input type="text" id="new_mailbox_id" name="new_mailbox_id" placeholder="Mailbox ID">
                      <input type="text" id="new_mailbox_emails" name="new_mailbox_emails" placeholder="comma-separated emails">
+                </div>
+                <br>
+                <button type="submit" class="btn">Save All Settings</button>
+            </div>
+
+            <div class="form-section">
+                <h2>Custom Mailbox Names</h2>
+                <div id="custom-mailbox-names" class="mailbox-entries">
+                    {% for mailbox, name in custom_mailbox_names.items() %}
+                    <div class="mailbox-entry" id="name-entry-{{ loop.index0 }}" data-container="custom">
+                        <input type="text" name="custom_mailbox_id_{{ loop.index0 }}" value="{{ mailbox }}">
+                        <input type="text" name="custom_name_{{ loop.index0 }}" value="{{ name }}" placeholder="Custom Name">
+                        <input type="hidden" name="original_custom_mailbox_id_{{ loop.index0 }}" value="{{ mailbox }}">
+                        <button type="button" class="remove-btn" onclick="removeEntry(this)">Remove</button>
+                    </div>
+                    {% endfor %}
+                </div>
+                <hr>
+                <h3>Add New Custom Name</h3>
+                <div class="mailbox-entry">
+                     <input type="text" id="new_custom_mailbox_id" name="new_custom_mailbox_id" placeholder="Mailbox ID">
+                     <input type="text" id="new_custom_name" name="new_custom_name" placeholder="Custom Name">
                 </div>
                 <br>
                 <button type="submit" class="btn">Save All Settings</button>
@@ -151,9 +173,69 @@
         function removeMailbox(entryId) {
             const entry = document.getElementById(entryId);
             if (entry) {
+                // Determine which container this entry belongs to so we can reindex correctly
+                const isMailbox = entryId.startsWith('entry-');
+                const isCustom = entryId.startsWith('name-entry-');
                 entry.remove();
+
+                // After removing an entry, reindex the remaining inputs so the server-side
+                // sequential while-loop sees contiguous indices (0..n-1).
+                if (isMailbox) {
+                    reindexMailboxes();
+                } else if (isCustom) {
+                    reindexCustomNames();
+                }
             }
+        }
+
+        function reindexMailboxes() {
+            const container = document.getElementById('mailbox-entries');
+            if (!container) return;
+            const entries = container.querySelectorAll('.mailbox-entry');
+            entries.forEach((entry, idx) => {
+                // Expected order: mailbox id (text), emails (text), original id (hidden)
+                const inputs = entry.querySelectorAll('input');
+                if (inputs.length >= 3) {
+                    inputs[0].name = `mailbox_id_${idx}`;
+                    inputs[1].name = `emails_${idx}`;
+                    inputs[2].name = `original_mailbox_id_${idx}`;
+                } else {
+                    // Fallback: try to map by type
+                    const textInputs = entry.querySelectorAll('input[type="text"]');
+                    const hiddenInput = entry.querySelector('input[type="hidden"]');
+                    if (textInputs.length >= 2 && hiddenInput) {
+                        textInputs[0].name = `mailbox_id_${idx}`;
+                        textInputs[1].name = `emails_${idx}`;
+                        hiddenInput.name = `original_mailbox_id_${idx}`;
+                    }
+                }
+                entry.id = `entry-${idx}`;
+            });
+        }
+
+        function reindexCustomNames() {
+            const container = document.getElementById('custom-mailbox-names');
+            if (!container) return;
+            const entries = container.querySelectorAll('.mailbox-entry');
+            entries.forEach((entry, idx) => {
+                // Expected order: custom mailbox id (text), custom name (text), original id (hidden)
+                const inputs = entry.querySelectorAll('input');
+                if (inputs.length >= 3) {
+                    inputs[0].name = `custom_mailbox_id_${idx}`;
+                    inputs[1].name = `custom_name_${idx}`;
+                    inputs[2].name = `original_custom_mailbox_id_${idx}`;
+                } else {
+                    const textInputs = entry.querySelectorAll('input[type="text"]');
+                    const hiddenInput = entry.querySelector('input[type="hidden"]');
+                    if (textInputs.length >= 2 && hiddenInput) {
+                        textInputs[0].name = `custom_mailbox_id_${idx}`;
+                        textInputs[1].name = `custom_name_${idx}`;
+                        hiddenInput.name = `original_custom_mailbox_id_${idx}`;
+                    }
+                }
+                entry.id = `name-entry-${idx}`;
+            });
         }
     </script>
     {% endblock %}
-                    <label for="web_password_confirm">Confirm New Password</label>
+

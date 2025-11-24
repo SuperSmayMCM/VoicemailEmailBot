@@ -15,6 +15,7 @@ app.secret_key = os.urandom(24)
 CONFIG_PATH = 'config.ini'
 MAILBOX_EMAILS_PATH = 'mailbox_emails.json'
 MAIN_SCRIPT = 'voicemail_to_email.py'
+MAILBOX_CUSTOM_NAMES_PATH = 'custom_mailbox_names.json'
 
 git_commit_id = "unknown"
 # Try to get the current git commit ID
@@ -198,9 +199,21 @@ def load_mailbox_emails():
             return json.load(f)
     return {}
 
+def load_custom_mailbox_names():
+    """Loads mailbox to name mappings from MAILBOX_CUSTOM_NAMES_PATH."""
+    if os.path.exists(MAILBOX_CUSTOM_NAMES_PATH):
+        with open(MAILBOX_CUSTOM_NAMES_PATH, 'r') as f:
+            return json.load(f)
+    return {}
+
 def save_mailbox_emails(data):
     """Saves mailbox to email mappings to mailbox_emails.json."""
     with open(MAILBOX_EMAILS_PATH, 'w') as f:
+        json.dump(data, f, indent=4)
+
+def save_custom_mailbox_names(data):
+    """Saves mailbox to name mappings to MAILBOX_CUSTOM_NAMES_PATH."""
+    with open(MAILBOX_CUSTOM_NAMES_PATH, 'w') as f:
         json.dump(data, f, indent=4)
 
 def get_statistics():
@@ -262,8 +275,9 @@ def index():
         return redirect(url_for('login'))
     config = load_config()
     mailbox_emails = load_mailbox_emails()
+    custom_mailbox_names = load_custom_mailbox_names()
     scheduler_running = scheduler_thread_instance is not None and scheduler_thread_instance.is_alive()
-    return render_template('index.html', config=config, mailbox_emails=mailbox_emails, scheduler_running=scheduler_running, git_commit_id=git_commit_id)
+    return render_template('index.html', config=config, mailbox_emails=mailbox_emails, custom_mailbox_names=custom_mailbox_names, scheduler_running=scheduler_running, git_commit_id=git_commit_id)
 
 @app.route('/logs')
 def logs():
@@ -369,6 +383,25 @@ def save_settings():
         mailbox_emails[new_mailbox_id] = emails
 
     save_mailbox_emails(mailbox_emails)
+
+
+    # Save custom_mailbox_names.json
+    custom_mailbox_names = {}
+    i = 0
+    while f'original_custom_mailbox_id_{i}' in request.form:  
+        new_id = request.form.get(f'custom_mailbox_id_{i}')
+        custom_name = request.form.get(f'custom_name_{i}')
+        
+        if new_id and custom_name:
+            custom_mailbox_names[new_id] = custom_name
+        i += 1
+
+    new_custom_mailbox_id = request.form.get('new_custom_mailbox_id')
+    new_custom_name = request.form.get('new_custom_name')
+    if new_custom_mailbox_id and new_custom_name:
+        custom_mailbox_names[new_custom_mailbox_id] = new_custom_name
+
+    save_custom_mailbox_names(custom_mailbox_names)
 
     flash('Settings saved successfully!', 'success')
     return redirect(url_for('index'))

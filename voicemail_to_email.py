@@ -4,6 +4,7 @@ import os
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
+import sys
 import msal
 import requests
 import base64
@@ -21,6 +22,8 @@ from string import Template
 from typing import cast
 
 SCANNED_FILES_JSON_PATH = 'scanned_files.json'
+MAILBOX_CUSTOM_NAMES_PATH = 'custom_mailbox_names.json'
+MAILBOX_EMAILS_PATH = 'mailbox_emails.json'
 WHISPER_MODEL = 'medium'  # Change to desired model size: tiny, base, small, medium, large
 FTP_TIME_OFFSET = timedelta(days=30)
 TEMP_DIR = Path('temp')
@@ -83,9 +86,9 @@ def write_statistics(stats: dict) -> None:
                 pass
 
 def load_mailbox_emails() -> dict[str, list[str]]:
-    """Loads mailbox to email mappings from mailbox_emails.json."""
-    if os.path.exists('mailbox_emails.json'):
-        with open('mailbox_emails.json', 'r') as f:
+    """Loads mailbox to email mappings from MAILBOX_EMAILS_PATH."""
+    if os.path.exists(MAILBOX_EMAILS_PATH):
+        with open(MAILBOX_EMAILS_PATH, 'r') as f:
             mailbox_emails = json.load(f)
             config = load_config()
             domain = config['O365'].get('recipient_domain', '').strip()
@@ -108,6 +111,13 @@ def load_mailbox_emails() -> dict[str, list[str]]:
                 # I know, I know, modifying a list while iterating over it is bad practice.
                 mailbox_emails[mailbox] = valid_emails
             return mailbox_emails
+    return {}
+
+def load_custom_mailbox_names() -> dict[str, str]:
+    """Loads mailbox to name mappings from MAILBOX_CUSTOM_NAMES_PATH."""
+    if os.path.exists(MAILBOX_CUSTOM_NAMES_PATH):
+        with open(MAILBOX_CUSTOM_NAMES_PATH, 'r') as f:
+            return json.load(f)
     return {}
 
 def get_git_commit_id() -> str:
@@ -448,23 +458,39 @@ def transcribe_audio_whisper(model: whisper.Whisper, audio_path: str, timeout: f
             return ""
 
 # --- Email Sender Module ---
-def send_voicemail_email(access_token: str, recipient: str, mailbox: str, timestamp: str, audio_attachment_path: str, transcription: str | None = None):
+"""
+Sends an email with a new voicemail attachment using Microsoft Graph sendMail.
+
+Args:
+    access_token (str): The OAuth2 access token for Microsoft Graph API.
+    recipient (str): The email address of the recipient.
+    mailbox_name (str): The name of the mailbox from which the voicemail was received.
+    timestamp (str): The timestamp of the voicemail.
+    audio_attachment_path (str): The file path to the audio attachment.
+    transcription (str | None): The transcription text of the voicemail, if available.
+
+Returns:
+    None
+
+Raises:
+    Exception: If sending the email fails for any reason.
+"""
+def send_voicemail_email(access_token: str, recipient: str, mailbox_number: str, timestamp: str, audio_attachment_path: str, transcription: str | None = None) -> None:
     """Sends an email with a new voicemail attachment using Microsoft Graph sendMail.
     """
 
     config = load_config()
     add_to_statistics('email', 'email_send', 'attempts', 1)
 
-    if mailbox == '0':
-        mailbox = 'General Mailbox'
+    custom_mailbox_names = load_custom_mailbox_names()
+    if mailbox_number in custom_mailbox_names:
+        mailbox_name = custom_mailbox_names[mailbox_number]
+    else:
+        mailbox_name = f"Mailbox {mailbox_number}"
 
     try:
         # Build message
-        subject = ''
-        if type(mailbox) is int:
-            subject = f"New Voicemail from Mailbox {mailbox}!"
-        else:
-            subject = f"New Voicemail from {mailbox}!"
+        subject = f"New Voicemail from {mailbox_name}!"
 
         # CIDs for the images. This lets us include the image in the email, and reference it in the HTML.
         # Files will be loaded later, and attached with these IDs
@@ -474,7 +500,7 @@ def send_voicemail_email(access_token: str, recipient: str, mailbox: str, timest
 
         # Build HTML Body using the template
         email_data = {
-            'mailbox': mailbox,
+            'mailbox': mailbox_name,
             'transcription': transcription if transcription else "No transcription provided.",
             'timestamp': timestamp,
             'support_email': config['O365']['support_email'] if config['O365']['support_email'] else 'tech support',

@@ -147,6 +147,10 @@ def remove_temp_dir():
 
 
 # --- Statistics Module ---
+# Periodic flush: flush the stats cache every STATS_FLUSH_INTERVAL seconds
+STATS_FLUSH_INTERVAL = 60  # seconds
+stats_flush_thread: threading.Thread | None = None
+stats_flush_stop = threading.Event()
 
 def flush_statistics_cache() -> None:
     """Flush the in-memory statistics cache to disk (atomic replace)."""
@@ -167,14 +171,6 @@ def flush_statistics_cache() -> None:
                     os.remove(tmp_path)
             except Exception:
                 pass
-
-# Ensure we flush the in-memory cache at program exit
-atexit.register(flush_statistics_cache)
-
-# Periodic flush: flush the stats cache every STATS_FLUSH_INTERVAL seconds
-STATS_FLUSH_INTERVAL = 60  # seconds
-stats_flush_thread: threading.Thread | None = None
-stats_flush_stop = threading.Event()
 
 def _periodic_flush_loop() -> None:
     """Background loop that flushes the statistics cache periodically.
@@ -208,9 +204,6 @@ def stop_periodic_stats_flush() -> None:
         flush_statistics_cache()
     except Exception:
         pass
-
-# Ensure the periodic flusher is stopped at exit (stop then final flush is already registered)
-atexit.register(stop_periodic_stats_flush)
 
 def add_to_statistics(category: str, action: str, status: str, value: int) -> None:
     """Adds a value to a statistics key in the in-memory cache.
@@ -770,6 +763,12 @@ def main():
     #    e) Clean up local files
     #    f) Mark file as processed
     # 6) Save updated scanned files list
+
+    # Ensure we flush the in-memory cache at program exit
+    atexit.register(flush_statistics_cache)
+    
+    # Ensure the periodic flusher is stopped at exit (stop then final flush is already registered)
+    atexit.register(stop_periodic_stats_flush)
 
     def cleanup():
         # Close FTP connection

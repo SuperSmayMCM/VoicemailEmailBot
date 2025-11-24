@@ -19,6 +19,9 @@ MAILBOX_EMAILS_PATH = 'mailbox_emails.json'
 MAIN_SCRIPT = 'voicemail_to_email.py'
 MAILBOX_CUSTOM_NAMES_PATH = 'custom_mailbox_names.json'
 
+last_error_notification_time = 0
+ERROR_NOTIFICATION_COOLDOWN = 86400  # 1 day in seconds
+
 git_commit_id = "unknown"
 # Try to get the current git commit ID
 try:
@@ -264,6 +267,15 @@ def acquire_token(client_id: str, client_secret: str, tenant: str) -> str:
 
 def send_error_notification(subject, HTMLmessage):
     """Sends an error notification email using the configured O365 settings."""
+
+    global last_error_notification_time
+    current_time = time.time()
+    if current_time - last_error_notification_time < ERROR_NOTIFICATION_COOLDOWN:
+        print("[Notification] Skipping error notification email due to cooldown.")
+        return
+
+    last_error_notification_time = current_time
+
     config = load_config()
     if 'O365' not in config:
         print("[Notification] O365 configuration section missing.")

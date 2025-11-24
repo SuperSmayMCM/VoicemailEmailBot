@@ -1,6 +1,6 @@
 # Madison Children's Museum Voicemail to Email Server
 
-This program is a simple(ish) Python script with an accompanying web server that is designed to scrape a Mitel MiVoice Buisness PBX running an internal voicemail server, and send emails to Microsoft 365 users when they receive a voicemail. 
+This program is a simple(ish) Python script with an accompanying web server that is designed to scrape a Mitel MiVoice Business PBX running an internal voicemail server, and send emails to Microsoft 365 users when they receive a voicemail. 
 
 The rest of this readme is rough explanation of how it works, in case anyone needs to mess with it in the future.
 
@@ -8,7 +8,7 @@ The rest of this readme is rough explanation of how it works, in case anyone nee
 
 ## Setup:
 ### Prerequisites:
-Firstly, if you are not using a Mitel MiVoice Buisness PBX (or maybe some other very similar models) with an internal voicemail server, this script will not work. It may be possible to adapt for other systems, but that hasn't been done yet.
+Firstly, if you are not using a Mitel MiVoice Business PBX (or maybe some other very similar models) with an internal voicemail server, this script will not work. It may be possible to adapt for other systems, but that hasn't been done yet.
 
 You will need a Microsoft Entra application with permissions to send emails as an application. Although we aren't using the O365 library, the guide [here](https://o365.github.io/python-o365/latest/getting_started.html#oauth-setup-prerequisite) documents the process. Note that you will be using *application* permissions and not delegated permissions. For more info on how to limit the permission scope to only send as certain addresses, see [security](#security).
 
@@ -33,7 +33,7 @@ Note: The default username and password are `admin` and `password`. Please chang
 - host: The address of your FTP server (eg. 10.100.1.2)
 - user: Your FTP username
 - password: Your FTP password
-- base_path: The path to search for voicemail mailbox folders in. For a Mitel MiVoice Buinsess PBX, this should be `/vmail/d/vm/grp`. 
+- base_path: The path to search for voicemail mailbox folders in. For a Mitel MiVoice Business PBX, this should be `/vmail/d/vm/grp`. 
 
 ### O365
 - client_id: The client ID of your Microsoft Entra application

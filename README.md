@@ -42,6 +42,7 @@ Note: The default username and password are `admin` and `password`. Please chang
 - sender_address: The address to send your emails from
 - recipient_domain: The default domain to send emails to if a configured address doesn't have a domain
 - support_email: The email address to be included in emails as a support address
+- error_notification_email: An email is sent to this address when something goes wrong. Hypothetically.
 
 ### WEB
 - user: The username of the configuration webpage

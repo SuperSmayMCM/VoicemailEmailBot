@@ -69,9 +69,16 @@
     }
 
     function buildCard(title, value, sub) {
-        const el = document.createElement('div'); el.className = 'card';
-        el.innerHTML = `<div class="title">${title}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}`;
-        return el;
+        const newElement = document.createElement('div'); newElement.className = 'card';
+        const titleDiv = document.createElement('div'); titleDiv.className = 'title'; titleDiv.textContent = title;
+        const valueDiv = document.createElement('div'); valueDiv.className = 'value'; valueDiv.textContent = value;
+        newElement.appendChild(titleDiv);
+        newElement.appendChild(valueDiv);
+        if (sub) {
+            const subDiv = document.createElement('div'); subDiv.className = 'sub'; subDiv.textContent = sub;
+            newElement.appendChild(subDiv);
+        }
+        return newElement;
     }
 
     async function fetchStatistics() {

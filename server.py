@@ -58,6 +58,10 @@ def run_main_script(manual_trigger=False):
     global last_print_log
     global silence_message_printed
 
+    stderr_had_output = threading.Event()
+    last_exit_code = None
+
+
     if not script_execution_lock.acquire(blocking=False):
         print("[Scheduler] Attempted to run script while it was already running.")
         # Log this attempt to the user-visible log
@@ -97,8 +101,6 @@ def run_main_script(manual_trigger=False):
 
             stdout_prefix = f"[{MAIN_SCRIPT}]"
             stderr_prefix = f"[{MAIN_SCRIPT}][ERR]"
-
-            stderr_had_output = threading.Event()
 
             def _reader_thread(stream, prefix, is_error=False):
                 # Read lines as they become available and append to shared logs
@@ -150,6 +152,8 @@ def run_main_script(manual_trigger=False):
             for t in threads:
                 t.join(timeout=1.0)
 
+            last_exit_code = process.returncode
+
             with log_lock:
                 current_web_log += f"\n--- Process finished at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (returncode={process.returncode}) ---"
 
@@ -191,6 +195,13 @@ def run_main_script(manual_trigger=False):
             return {'returncode': -1, 'stdout': '', 'stderr': str(e)}
     finally:
         script_execution_lock.release()
+        # Send notification to email if configured
+        if stderr_had_output.is_set():
+            print("[Server] Error detected. Sending error notification email...")
+            send_error_notification(
+                subject=f"Error in {MAIN_SCRIPT} (returncode={last_exit_code})",
+                HTMLmessage=f"<pre>{current_web_log}</pre>"
+            )
 
 def scheduler_loop():
     """The background thread that runs the script periodically."""
@@ -199,14 +210,7 @@ def scheduler_loop():
         config = load_config()
         interval_minutes = config.getint('SCHEDULER', 'interval_minutes', fallback=15)
         
-        result = run_main_script()
-        # Send notification to email if configured
-        if result and result['returncode'] != 0:
-            print("[Server] Error detected. Sending error notification email...")
-            send_error_notification(
-                subject=f"Error in {MAIN_SCRIPT} (returncode={result['returncode']})",
-                HTMLmessage=f"<pre>{result['stderr']}</pre>"
-            )
+        run_main_script()
         
         # Wait for the interval, but check for stop signal every second
         for _ in range(interval_minutes * 60):

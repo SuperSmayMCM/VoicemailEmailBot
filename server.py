@@ -287,7 +287,7 @@ def send_error_notification(subject, HTMLmessage):
         client_secret = o365_config.get('client_secret')
         tenant_id = o365_config.get('tenant_id')
         sender_address = o365_config.get('sender_address')
-        recipient = o365_config.get('notification_recipient')
+        recipient = o365_config.get('error_notification_email')
 
         if not client_id or not client_secret or not tenant_id or not sender_address or not recipient:
             print("[Notification] Incomplete O365 configuration. Cannot send email.")
@@ -507,6 +507,7 @@ def save_settings():
     config['O365']['client_id'] = request.form.get('o365_client_id', '')
     config['O365']['tenant_id'] = request.form.get('o365_tenant_id', '')
     config['O365']['support_email'] = request.form.get('o365_support_email', '')
+    config['O365']['error_notification_email'] = request.form.get('o365_error_notification_email', '')
     if request.form.get('o365_client_secret'):
         config['O365']['client_secret'] = request.form.get('o365_client_secret', '')
 

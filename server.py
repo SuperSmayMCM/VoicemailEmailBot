@@ -8,6 +8,8 @@ import time
 import subprocess
 import sys
 from datetime import datetime
+import msal
+import requests
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
@@ -45,105 +47,145 @@ Args:
     manual_trigger (bool): Whether this run was manually triggered via the web UI. If so, prints an additional message.
 '''
 def run_main_script(manual_trigger=False):
-    """Runs the main.py script and captures its output in real-time."""
+    """Runs the main.py script and captures stdout and stderr in real-time.
+
+    Returns a dict with keys: `returncode`, `stdout`, `stderr`.
+    """
     global current_web_log
     global last_print_log
     global silence_message_printed
-    current_print_log = ""
-
 
     if not script_execution_lock.acquire(blocking=False):
         print("[Scheduler] Attempted to run script while it was already running.")
         # Log this attempt to the user-visible log
         with log_lock:
             current_web_log += f"\n--- Manual run request denied: Script is already running. ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ---\n"
-        return
+        return None
 
     try:
         if manual_trigger:
             print(f"[Manual Trigger] Running {MAIN_SCRIPT} script with timeout...")
 
-        current_print_log += f"[Scheduler] Running {MAIN_SCRIPT} script with timeout..."
-        
+        current_print_lines = []
+        print_lock = threading.Lock()
+
         # Reset log for the new run
         log_output = f"--- Log from {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n"
         with log_lock:
             current_web_log = log_output
-        
+
         try:
             python_executable = sys.executable
 
             # Ensure child python processes are unbuffered so we can stream output in
-            # real time. Merge stderr into stdout so we capture everything as it
-            # appears rather than waiting until process exit.
+            # real time. Capture stdout and stderr separately so we can detect errors.
             env = os.environ.copy()
             env['PYTHONUNBUFFERED'] = '1'
 
             process = subprocess.Popen(
                 [python_executable, 'run_with_timeout.py', '900', python_executable, MAIN_SCRIPT], # 15 minutes timeout
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1, # Line-buffered
                 universal_newlines=True,
                 env=env
             )
 
-            prepend_line = f"[{MAIN_SCRIPT}]"
+            stdout_prefix = f"[{MAIN_SCRIPT}]"
+            stderr_prefix = f"[{MAIN_SCRIPT}][ERR]"
 
-            # Stream stdout in real time. Break when the process ends and no more
-            # data is available.
-            if process.stdout:
-                while True:
-                    line = process.stdout.readline()
-                    # If we got a line, append it to the shared log immediately
-                    if line:
-                        with log_lock:
-                            current_web_log += line
+            stderr_had_output = threading.Event()
 
-                        current_print_log += f"{prepend_line} {line}"
-                        # Optional server-side echo for debugging
-                    else:
-                        # No data right now. If process finished, break; otherwise loop
-                        if process.poll() is not None:
-                            break
-                        # slight sleep to avoid busy-waiting
-                        time.sleep(0.1)
+            def _reader_thread(stream, prefix, is_error=False):
+                # Read lines as they become available and append to shared logs
+                global current_web_log
+                try:
+                    while True:
+                        line = stream.readline()
+                        if line:
+                            # append raw line (with newline) to the shared web log
+                            with log_lock:
+                                current_web_log += line
+                            # append stripped line to the print buffer
+                            s = line.rstrip('\n')
+                            with print_lock:
+                                current_print_lines.append(prefix + " " + s)
+                            if is_error:
+                                stderr_had_output.set()
+                        else:
+                            if process.poll() is not None:
+                                break
+                            time.sleep(0.1)
 
-            # Read any final data that may remain
-            try:
-                if process.stdout:
-                    remaining = process.stdout.read()
+                    # Read any remaining data
+                    remaining = stream.read()
                     if remaining:
-                        with log_lock:
-                            current_web_log += remaining
-                        current_print_log += ''.join(f"{prepend_line} {l}\n" for l in remaining.split('\n') if l)
-            except Exception:
-                pass
+                        for l in remaining.splitlines():
+                            with log_lock:
+                                current_web_log += l + "\n"
+                            with print_lock:
+                                current_print_lines.append(prefix + " " + l)
+                            if is_error:
+                                stderr_had_output.set()
+                except Exception:
+                    # Best-effort: don't let reader exceptions kill the scheduler
+                    pass
 
-            process.wait() # Wait for the process to complete
+            threads = []
+            if process.stdout:
+                t_out = threading.Thread(target=_reader_thread, args=(process.stdout, stdout_prefix, False), daemon=True)
+                threads.append(t_out)
+                t_out.start()
+            if process.stderr:
+                t_err = threading.Thread(target=_reader_thread, args=(process.stderr, stderr_prefix, True), daemon=True)
+                threads.append(t_err)
+                t_err.start()
+
+            # Wait for process to finish and for reader threads to drain
+            process.wait()
+            for t in threads:
+                t.join(timeout=1.0)
 
             with log_lock:
-                current_web_log += f"\n--- Process finished at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---"
-            
+                current_web_log += f"\n--- Process finished at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (returncode={process.returncode}) ---"
+
+            # Combine printed lines for comparison with previous run
+            current_print_log = '\n'.join(current_print_lines)
+
             # Only print to console if the log changed
             if current_print_log != last_print_log:
-                print(current_print_log)
+                if current_print_log:
+                    print(current_print_log)
                 last_print_log = current_print_log
                 silence_message_printed = False
-                print(f"[Scheduler] {MAIN_SCRIPT} finished.")
+                print(f"[Scheduler] {MAIN_SCRIPT} finished (returncode={process.returncode}).")
             elif not silence_message_printed:
-                print(f"[Scheduler] {MAIN_SCRIPT} finished.")
+                print(f"[Scheduler] {MAIN_SCRIPT} finished (returncode={process.returncode}).")
                 print(f"[Scheduler] No changes in output from last run of {MAIN_SCRIPT}. Silencing further identical messages. Check statistics for last run time.")
                 silence_message_printed = True
 
-            
+            # If there was stderr output or non-zero exit code, make sure it's visible in logs
+            if stderr_had_output.is_set() or (process.returncode is not None and process.returncode != 0):
+                with log_lock:
+                    current_web_log += f"\n--- Detected error (returncode={process.returncode}) ---\n"
+
+            # Build return payload
+            stdout_combined = '\n'.join([l for l in current_print_lines if l.startswith(stdout_prefix)])
+            stderr_combined = '\n'.join([l for l in current_print_lines if l.startswith(stderr_prefix)])
+
+            return {
+                'returncode': process.returncode,
+                'stdout': stdout_combined,
+                'stderr': stderr_combined,
+            }
 
         except Exception as e:
             error_message = f"--- Scheduler failed to execute {MAIN_SCRIPT} at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n{e}"
             with log_lock:
                 current_web_log = error_message
             print(f"[Scheduler] Failed to run {MAIN_SCRIPT}: {e}")
+            return {'returncode': -1, 'stdout': '', 'stderr': str(e)}
     finally:
         script_execution_lock.release()
 
@@ -154,7 +196,14 @@ def scheduler_loop():
         config = load_config()
         interval_minutes = config.getint('SCHEDULER', 'interval_minutes', fallback=15)
         
-        run_main_script()
+        result = run_main_script()
+        # Send notification to email if configured
+        if result and result['returncode'] != 0:
+            print("[Server] Error detected. Sending error notification email...")
+            send_error_notification(
+                subject=f"Error in {MAIN_SCRIPT} (returncode={result['returncode']})",
+                HTMLmessage=f"<pre>{result['stderr']}</pre>"
+            )
         
         # Wait for the interval, but check for stop signal every second
         for _ in range(interval_minutes * 60):
@@ -178,6 +227,93 @@ def stop_scheduler():
         scheduler_thread_instance.join()
         print("[Server] Scheduler stopped.")
         scheduler_thread_instance = None
+
+    """
+    Acquires an OAuth2 token using the MSAL library for app-only authentication.
+
+    Args:
+        client_id (str): The Azure AD application (client) ID.
+        client_secret (str): The client secret for the Azure AD application.
+        tenant (str): The Azure AD tenant ID.
+
+    Raises:
+        Exception: If token acquisition fails.
+    """
+
+def acquire_token(client_id: str, client_secret: str, tenant: str) -> str:
+
+    access_token = None
+
+    # For client credentials you must request the .default scope
+    scopes = ["https://graph.microsoft.com/.default"]
+
+    authority = f"https://login.microsoftonline.com/{tenant}"
+
+    app = msal.ConfidentialClientApplication(client_id=client_id, client_credential=client_secret, authority=authority)
+    result = app.acquire_token_for_client(scopes=scopes)
+
+    if not result or 'access_token' not in result or result['access_token'] is None:
+        raise Exception(f"Failed to acquire app-only token. Result: {result}")
+    
+    
+    print("[Notification] Acquired Microsoft authentication token.")
+    access_token = result['access_token']
+    
+
+    return access_token
+
+def send_error_notification(subject, HTMLmessage):
+    """Sends an error notification email using the configured O365 settings."""
+    config = load_config()
+    if 'O365' not in config:
+        print("[Notification] O365 configuration section missing.")
+        return
+
+    try:
+        o365_config = config['O365']
+        client_id = o365_config.get('client_id')
+        client_secret = o365_config.get('client_secret')
+        tenant_id = o365_config.get('tenant_id')
+        sender_address = o365_config.get('sender_address')
+        recipient = o365_config.get('notification_recipient')
+
+        if not client_id or not client_secret or not tenant_id or not sender_address or not recipient:
+            print("[Notification] Incomplete O365 configuration. Cannot send email.")
+            return
+
+        access_token = acquire_token(client_id, client_secret, tenant_id)
+
+        message = {
+            "subject": subject,
+            "body": {"contentType": "HTML", "content": HTMLmessage},
+            "toRecipients": [{"emailAddress": {"address": recipient}}],
+        }
+
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json'
+        }
+
+        # attempt to send as specified sender
+        url = f'https://graph.microsoft.com/v1.0/users/{config["O365"]["sender_address"]}/sendMail'
+
+        payload = {"message": message, "saveToSentItems": "true"}
+
+        resp = requests.post(url, headers=headers, json=payload)
+        if resp.status_code in (200, 202):
+            try:
+                # measure the full JSON payload size (UTF-8 bytes) including base64 attachment content
+                json_payload = json.dumps(payload)
+                payload_size = len(json_payload.encode('utf-8'))
+            except Exception:
+                # if for some reason measuring fails, don't block the success path
+                pass
+        else:
+            raise Exception(f"Failed to send email to {recipient}. Status: {resp.status_code} Response: {resp.text}")
+        
+        print("[Notification] Error notification email sent.")
+    except Exception as e:
+        print(f"[Notification] Failed to send error notification email: {e}")
 
 # --- Flask Routes ---
 def load_config():

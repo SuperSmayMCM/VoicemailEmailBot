@@ -18,12 +18,13 @@ def run_with_timeout(command, timeout_seconds):
     Kills the process if it exceeds the timeout.
     """
     process = None
+    return_code = 1
     try:
         print(f"Running command: '{' '.join(command)}' with timeout {timeout_seconds} seconds")
-        
+
         process = subprocess.Popen(
-            command, 
-            stdout=subprocess.PIPE, 
+            command,
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
@@ -43,15 +44,28 @@ def run_with_timeout(command, timeout_seconds):
         stdout_thread.join()
         stderr_thread.join()
 
+        # Capture the child's return code and return it
+        return_code = process.returncode if process is not None else 1
+
     except FileNotFoundError:
         print(f"Error: Command not found. Make sure '{command[0]}' is in your PATH or provide an absolute path.")
+        return_code = 127
     except subprocess.TimeoutExpired:
         print(f"Command timed out after {timeout_seconds} seconds. Terminating process.")
         if process:
-            process.kill()
-            process.wait()
+            try:
+                process.kill()
+                process.wait(timeout=5)
+            except Exception:
+                # ignore wait errors
+                pass
+        # Use a conventional timeout exit code (124 similar to coreutils timeout)
+        return_code = 124
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
+        return_code = 1
+
+    return return_code
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run a command with a timeout.")
@@ -75,5 +89,7 @@ if __name__ == "__main__":
     if cmd_to_run and cmd_to_run[0].endswith('python') and '-u' not in cmd_to_run:
         cmd_to_run.insert(1, '-u')
 
-    run_with_timeout(cmd_to_run, args.timeout)
+    rc = run_with_timeout(cmd_to_run, args.timeout)
+    # Exit with the child's return code so callers see the actual result
+    sys.exit(0 if rc is None else rc)
 

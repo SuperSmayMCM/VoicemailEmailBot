@@ -240,7 +240,7 @@ def add_to_statistics(category: str, action: str, status: str, value: int) -> No
             else:
                 statistics_cache[category][action][status] = value
     except Exception as e:
-        print(f"Error updating statistics cache: {e}")
+        printError(f"Error updating statistics cache: {e}")
 
 def set_statistics(category: str, action: str, status: str, value: int) -> None:
     """Sets a value to a statistics key in the in-memory cache.
@@ -264,7 +264,7 @@ def set_statistics(category: str, action: str, status: str, value: int) -> None:
                 statistics_cache[category][action] = {}
             statistics_cache[category][action][status] = value
     except Exception as e:
-        print(f"Error updating statistics cache: {e}")
+        printError(f"Error updating statistics cache: {e}")
 
 # --- FTP Scanner Module ---
 def scan_ftp_folder(ftp_connection: ftplib.FTP, base_path: str, scanned_files: set[str]) -> tuple[dict[str, list[dict]], set[str]]:
@@ -312,8 +312,8 @@ def scan_ftp_folder(ftp_connection: ftplib.FTP, base_path: str, scanned_files: s
                             try:
                                 mod_time_str = ftp_connection.voidcmd(f"MDTM {full_path}")[4:].strip()
                                 ftp_mod_time = parse_mitel_ftp_date(mod_time_str)
-                            except ftplib.all_errors:
-                                print(f"Failed to retrieve modification time for {full_path}")
+                            except Exception as e:
+                                printError(f"Failed to retrieve modification time for {full_path}. Error: {e}")
                                 add_to_statistics('ftp', 'ftp_file_modtime', 'fails', 1)
                                 ftp_mod_time = datetime.now()
 
@@ -327,7 +327,7 @@ def scan_ftp_folder(ftp_connection: ftplib.FTP, base_path: str, scanned_files: s
         add_to_statistics('ftp', 'ftp_scan', 'successes', 1)
     except ftplib.all_errors as e:
         add_to_statistics('ftp', 'ftp_scan', 'fails', 1)
-        print(f"FTP error: {e}")
+        raise e
     finally:
         ftp_connection.cwd('/')
         
@@ -349,7 +349,7 @@ def parse_mitel_ftp_date(date_string):
         zero_based_month = int(month_str)
         # Check for invalid zero-based month index (should be 0-11)
         if not 0 <= zero_based_month <= 11:
-             raise ValueError(f"Month index '{month_str}' is outside the expected 0-11 range.")
+            raise ValueError(f"Month index '{month_str}' is outside the expected 0-11 range.")
 
         correct_month = zero_based_month + 1
         
@@ -403,15 +403,15 @@ def convert_ulaw_to_mp3(ulaw_path: Path, output_path: Path) -> bool:
                 return True
             else:
                 add_to_statistics('audio_conversion', 'ffmpeg_conversion', 'fails', 1)
-                print(f"ffmpeg conversion failed (code {proc.returncode}). stderr:\n{proc.stderr}")
+                printError(f"ffmpeg conversion failed (code {proc.returncode}). stderr:\n{proc.stderr}")
                 return False
         else:
-            print("ffmpeg not found in PATH. Please install ffmpeg to enable audio conversion.")
+            printError("ffmpeg not found in PATH. Please install ffmpeg to enable audio conversion.")
             return False
 
     except Exception as e:
         add_to_statistics('audio_conversion', 'ffmpeg_conversion', 'fails', 1)
-        print(f"Audio conversion failed: {e}")
+        printError(f"Audio conversion failed: {e}")
         return False
 
 # --- Transcription Module ---
@@ -431,7 +431,7 @@ def transcribe_audio_whisper(model: whisper.Whisper, audio_path: str, timeout: f
 
     def transcribe():
         add_to_statistics('transcription', 'whisper_transcription', 'attempts', 1)
-        return model.transcribe(audio_path)
+        return model.transcribe(audio_path, fp16=torch.cuda.is_available())
 
     start_ts = datetime.now()
     with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -454,7 +454,7 @@ def transcribe_audio_whisper(model: whisper.Whisper, audio_path: str, timeout: f
             elapsed = datetime.now() - start_ts
             add_to_statistics('transcription', 'whisper_transcription_time_seconds', 'total', int(elapsed.total_seconds()))
             add_to_statistics('transcription', 'whisper_transcription', 'fails', 1)
-            print(f"Whisper transcription failed: {e}")
+            printError(f"Whisper transcription failed: {e}")
             return ""
 
 # --- Email Sender Module ---
@@ -521,7 +521,7 @@ def send_voicemail_email(access_token: str, recipient: str, mailbox_number: str,
         audio_attachment = None
 
         if audio_attachment_path is None:
-            print("Warning! Audio file path is None, so no audio will be included!")
+            print("Warning: Audio file path is None, so no audio will be included!")
         else:
             with open(audio_attachment_path, 'rb') as f:
                 data = f.read()
@@ -634,20 +634,21 @@ def send_voicemail_email(access_token: str, recipient: str, mailbox_number: str,
             except Exception:
                 # if for some reason measuring fails, don't block the success path
                 pass
-            return True
+            return
         else:
             add_to_statistics('email', 'email_send', 'fails', 1)
-            print(f"Failed to send email to {recipient}. Status: {resp.status_code} Response: {resp.text}")
-            return False
+            raise Exception(f"Failed to send email to {recipient}. Status: {resp.status_code} Response: {resp.text}")
 
     except Exception as e:
         add_to_statistics('email', 'email_send', 'fails', 1)
-        print(f"An error occurred while sending email: {e}")
-        return False
+        raise e
 
 def process_files(new_files_found, prev_scanned_files, config, access_token, ftp, whisper_model=None):
 
     add_to_statistics('general', 'file_processing_runs', 'total', 1)
+
+    if not config['O365']['sender_address']:
+        raise ValueError("Sender address is blank! Cannot send emails.")
 
     mailbox_emails = load_mailbox_emails()
 
@@ -690,11 +691,13 @@ def process_files(new_files_found, prev_scanned_files, config, access_token, ftp
                     print("No Whisper model loaded; skipping transcription.")
 
                 for recipient in recipients:
-                    if not config['O365']['sender_address']:
-                        print("Sender address is blank! Cannot send emails.")
-                        break
+                    
                     timestamp = modified_time.strftime("%B %d, %Y at %I:%M %p")
-                    send_voicemail_email(access_token, recipient, mailbox, timestamp, str(mp3_path), transcription=transcription)
+                    try:
+                        send_voicemail_email(access_token, recipient, mailbox, timestamp, str(mp3_path), transcription=transcription)
+                    except Exception as e:
+                        printError(f"Failed to send email to {recipient}: {e}")
+                    
 
             os.remove(local_path)
             if os.path.exists(mp3_path):
@@ -705,7 +708,18 @@ def process_files(new_files_found, prev_scanned_files, config, access_token, ftp
             # Update the scanned files list after each file is processed, so if the script is interrupted we don't reprocess files
             write_scanned_files(prev_scanned_files)
 
-def acquire_token(client_id: str, client_secret: str, tenant: str) -> str | None:
+"""
+Acquires an OAuth2 token using the MSAL library for app-only authentication.
+
+Args:
+    client_id (str): The Azure AD application (client) ID.
+    client_secret (str): The client secret for the Azure AD application.
+    tenant (str): The Azure AD tenant ID.
+
+Raises:
+    Exception: If token acquisition fails.
+"""
+def acquire_token(client_id: str, client_secret: str, tenant: str) -> str:
 
     add_to_statistics('O365', 'token_acquisition', 'attempts', 1)
 
@@ -720,29 +734,22 @@ def acquire_token(client_id: str, client_secret: str, tenant: str) -> str | None
         app = msal.ConfidentialClientApplication(client_id=client_id, client_credential=client_secret, authority=authority)
         result = app.acquire_token_for_client(scopes=scopes)
 
-        if not result or 'access_token' not in result:
-            add_to_statistics('O365', 'token_acquisition', 'fails', 1)
-            print("Failed to acquire app-only token. Result:", result)
-            return
-        else:
-            add_to_statistics('O365', 'token_acquisition', 'successes', 1)
-            print("Acquired Microsoft authentication token.")
-
-        access_token = result['access_token'] if 'access_token' in result else None
+        if not result or 'access_token' not in result or result['access_token'] is None:
+            raise Exception(f"Failed to acquire app-only token. Result: {result}")
+        
+        
+        print("Acquired Microsoft authentication token.")
+        access_token = result['access_token']
         
 
     except Exception as e:
-        print(f"An error occurred while acquiring token: {e}")
-    
-    if not access_token:
         add_to_statistics('O365', 'token_acquisition', 'fails', 1)
-    else:
-        add_to_statistics('O365', 'token_acquisition', 'successes', 1)
+        raise e
+    
+
+    add_to_statistics('O365', 'token_acquisition', 'successes', 1)
 
     return access_token
-
-    
-
 
 def token_has_mail_send(app_token: str) -> bool:
     try:
@@ -774,6 +781,13 @@ def token_has_mail_send(app_token: str) -> bool:
         return False
 
 
+# Source - https://stackoverflow.com/a
+# Posted by MarcH, modified by community. See post 'Timeline' for change history
+# Retrieved 2025-11-24, License - CC BY-SA 4.0
+
+def printError(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
+
 
 # --- Main Execution ---
 def main():
@@ -798,23 +812,54 @@ def main():
 
     def cleanup():
         # Close FTP connection
-        ftp.quit()
-        print("FTP connection closed.")
+        try:
+            ftp.quit()
+            print("FTP connection closed.")
+        except Exception as e:
+            # ftp may not exist or may already be closed; non-fatal
+            printError(f"Error closing FTP connection: {e}")
+
         print("Scan complete.")
 
-        # Save updated scanned files list
-        write_scanned_files(current_files_on_ftp)
+        # Save updated scanned files list if available
+        try:
+            if current_files_on_ftp is not None:
+                try:
+                    write_scanned_files(current_files_on_ftp)
+                except Exception as e:
+                    printError(f"Error writing scanned files during cleanup: {e}")
+        except Exception:
+            # defensive: don't allow cleanup to raise
+            pass
 
-        remove_temp_dir()
+        try:
+            remove_temp_dir()
+        except Exception as e:
+            printError(f"Error removing temp dir during cleanup: {e}")
 
-        script_end_time = datetime.now()
-        total_elapsed = script_end_time - script_start_time
-        add_to_statistics('general', 'script_run_time_seconds', 'total', int(total_elapsed.total_seconds()))
-        set_statistics('general', 'last_run_time', 'end', int(script_end_time.timestamp()))
+        # Update run-time statistics if start timestamp is available
+        try:
+            script_end_time = datetime.now()
+            start_ts = globals().get('script_start_time', None)
+            if start_ts is None:
+                # If we don't have a start timestamp, record end time only
+                add_to_statistics('general', 'script_run_time_seconds', 'total', 0)
+            else:
+                total_elapsed = script_end_time - start_ts
+                add_to_statistics('general', 'script_run_time_seconds', 'total', int(total_elapsed.total_seconds()))
+            try:
+                set_statistics('general', 'last_run_time', 'end', int(script_end_time.timestamp()))
+            except Exception as e:
+                printError(f"Error setting last_run_time during cleanup: {e}")
+        except Exception as e:
+            printError(f"Error updating statistics in cleanup: {e}")
 
+    atexit.register(cleanup)
 
     script_start_time = datetime.now()
     set_statistics('general', 'last_run_time', 'start', int(script_start_time.timestamp()))
+
+    current_files_on_ftp = None
 
 
     print("Loading configuration...")
@@ -822,15 +867,14 @@ def main():
     add_to_statistics('general', 'script_runs', 'total', 1)
 
     if not os.path.exists('config.ini'):
-        print("Error: config.ini file not found. The contents of config_template.ini have been copied to config.ini.")
-        print("Please edit config.ini to add your configuration settings, then re-run the script.")
 
         template_path = 'config_template.ini'
         if os.path.exists(template_path):
             shutil.copyfile(template_path, 'config.ini')
         else:
-            print("Error: config_template.ini file not found. Please ensure it exists in the script directory.")
-        return
+            raise FileNotFoundError("Error: config_template.ini file not found. Please ensure it exists in the script directory.")
+        
+        raise FileNotFoundError("config.ini file not found. A template has been created. Please configure it and re-run the script.")
     
     config = load_config()
    
@@ -850,8 +894,7 @@ def main():
 
     ffmpeg_path = shutil.which('ffmpeg')
     if not ffmpeg_path:
-        print("Error: ffmpeg not found in PATH. Please install ffmpeg to enable audio conversion.")
-        return
+        printError("Error: ffmpeg not found in PATH. Please install ffmpeg to enable audio conversion.")
     
     print("Checking for new files...")
 
@@ -859,8 +902,7 @@ def main():
     print(f"Connecting to FTP server {config['FTP']['host']}...")
 
     if config['FTP']['host'] == '':
-        print("No FTP host set! Exiting...")
-        return
+        raise ValueError("No FTP host set! Exiting...")
 
     try:
         add_to_statistics('ftp', 'ftp_connection', 'attempts', 1)
@@ -869,9 +911,8 @@ def main():
         add_to_statistics('ftp', 'ftp_connection', 'successes', 1)
         print("Connected to FTP server.")
     except ftplib.all_errors as e:
-        print(f"Failed to connect to FTP server: {e}")
         add_to_statistics('ftp', 'ftp_connection', 'fails', 1)
-        return
+        raise e
 
     print("Reading previously scanned files...")
     previously_scanned_files_set = set()
@@ -886,7 +927,6 @@ def main():
         previously_scanned_files_set = current_files_on_ftp
         write_scanned_files(previously_scanned_files_set)
         print(f"Recorded {len(previously_scanned_files_set)} existing files as processed.")
-        cleanup()
         return
 
     # Find new files since last scan, and collect current files on FTP
@@ -900,7 +940,6 @@ def main():
 
     if not new_files_found:
         print("No new files found.")
-        cleanup()
         return
 
 
@@ -911,18 +950,13 @@ def main():
     client_secret = config['O365']['client_secret']
 
     if not client_secret or not client_id or not tenant:
-        print("Client secret, client id, and tenant id must be configured!")
-        return
-
-    
+        raise ValueError("Client secret, client id, and tenant id must be configured!")    
 
     print("Signing in to Microsoft Graph...")
 
+    # Acquire token
+    # Throws exception on failure
     access_token = acquire_token(client_id, client_secret, tenant)
-
-    if not access_token:
-        print("Failed to acquire Microsoft authentication token.")
-        return
 
     # Verify the access token contains the application permission Mail.Send.
     if not token_has_mail_send(access_token):
@@ -932,12 +966,12 @@ def main():
         admin_consent_url = (
             f"https://login.microsoftonline.com/{tenant}/adminconsent?client_id={client_id}&redirect_uri={redirect}"
         )
-        print("\nWARNING: the acquired app-only token does not appear to include the Mail.Send application permission.")
-        print("This likely means the permission hasn't been granted by an administrator yet.")
-        print("Ask an admin to grant admin consent, or open the admin consent URL below:")
-        print(admin_consent_url)
-        print("\nAfter an admin grants consent, re-run this script.")
-        return
+        printError("\nWARNING: the acquired app-only token does not appear to include the Mail.Send application permission.")
+        printError("This likely means the permission hasn't been granted by an administrator yet.")
+        printError("Ask an admin to grant admin consent, or open the admin consent URL below:")
+        printError(admin_consent_url)
+        printError("\nAfter an admin grants consent, re-run this script.")
+        raise PermissionError("The acquired token does not have the required Mail.Send application permission.")
 
     
 
@@ -953,14 +987,12 @@ def main():
         whisper_model = whisper.load_model(WHISPER_MODEL)
         print("Whisper model loaded.")
     except Exception as e:
-        print(f"Failed to load Whisper model: {e}")
-        print("Continuing without transcription.")
+        printError(f"Failed to load Whisper model: {e}")
+        printError("Continuing without transcription.")
 
     # Process each new file found
     print("Processing new files...")
     process_files(new_files_found, previously_scanned_files_set, config, access_token, ftp, whisper_model=whisper_model)
-
-    cleanup()
 
 if __name__ == "__main__":
     main()

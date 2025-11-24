@@ -449,14 +449,14 @@ def transcribe_audio_whisper(model: whisper.Whisper, audio_path: str, timeout: f
             return ""
 
 # --- Email Sender Module ---
-def send_voicemail_email(access_token, recipient, mailbox, timestamp, audio_attachment_path, transcription=None):
+def send_voicemail_email(access_token: str, recipient: str, mailbox: str, timestamp: str, audio_attachment_path: str, transcription: str | None = None):
     """Sends an email with a new voicemail attachment using Microsoft Graph sendMail.
     """
 
     config = load_config()
     add_to_statistics('email', 'email_send', 'attempts', 1)
 
-    if mailbox == 0:
+    if mailbox == '0':
         mailbox = 'General Mailbox'
 
     try:
@@ -680,7 +680,44 @@ def process_files(new_files_found, prev_scanned_files, config, access_token, ftp
             # Update the scanned files list after each file is processed, so if the script is interrupted we don't reprocess files
             write_scanned_files(prev_scanned_files)
 
+def acquire_token(client_id: str, client_secret: str, tenant: str) -> str | None:
+
+    add_to_statistics('O365', 'token_acquisition', 'attempts', 1)
+
+    access_token = None
+
+    try:
+        # For client credentials you must request the .default scope
+        scopes = ["https://graph.microsoft.com/.default"]
+
+        authority = f"https://login.microsoftonline.com/{tenant}"
+
+        app = msal.ConfidentialClientApplication(client_id=client_id, client_credential=client_secret, authority=authority)
+        result = app.acquire_token_for_client(scopes=scopes)
+
+        if not result or 'access_token' not in result:
+            add_to_statistics('O365', 'token_acquisition', 'fails', 1)
+            print("Failed to acquire app-only token. Result:", result)
+            return
+        else:
+            add_to_statistics('O365', 'token_acquisition', 'successes', 1)
+            print("Acquired Microsoft authentication token.")
+
+        access_token = result['access_token'] if 'access_token' in result else None
+        
+
+    except Exception as e:
+        print(f"An error occurred while acquiring token: {e}")
     
+    if not access_token:
+        add_to_statistics('O365', 'token_acquisition', 'fails', 1)
+    else:
+        add_to_statistics('O365', 'token_acquisition', 'successes', 1)
+
+    return access_token
+
+    
+
 def remove_temp_dir():
     if TEMP_DIR.exists() and TEMP_DIR.is_dir():
         print("Cleaning up temporary files...")
@@ -851,26 +888,15 @@ def main():
         print("Client secret, client id, and tenant id must be configured!")
         return
 
-    # For client credentials you must request the .default scope
-    scopes = ["https://graph.microsoft.com/.default"]
-
-    authority = f"https://login.microsoftonline.com/{tenant}"
+    
 
     print("Signing in to Microsoft Graph...")
-    add_to_statistics('O365', 'token_acquisition', 'attempts', 1)
 
-    app = msal.ConfidentialClientApplication(client_id=client_id, client_credential=client_secret, authority=authority)
-    result = app.acquire_token_for_client(scopes=scopes)
+    access_token = acquire_token(client_id, client_secret, tenant)
 
-    if not result or 'access_token' not in result:
-        add_to_statistics('O365', 'token_acquisition', 'fails', 1)
-        print("Failed to acquire app-only token. Result:", result)
+    if not access_token:
+        print("Failed to acquire Microsoft authentication token.")
         return
-    else:
-        add_to_statistics('O365', 'token_acquisition', 'successes', 1)
-        print("Acquired Microsoft authentication token.")
-
-    access_token = result['access_token']
 
     # Verify the access token contains the application permission Mail.Send.
     if not token_has_mail_send(access_token):

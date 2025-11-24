@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Voicemail App{% endblock %}</title>
+    <style>
+        :root {
+            --bg: #f4f6fb;
+            --card: #ffffff;
+            --muted: #6b7280;
+            --accent: #2563eb;
+            --success: #16a34a;
+            --glass: rgba(255, 255, 255, 0.6);
+        }
+
+        html, body { height: 100%; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(180deg, var(--bg), #eef2ff);
+            color: #111827;
+            margin: 0; padding: 24px;
+            /* Ensure gradient covers full page without repeating */
+            min-height: 100vh;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+            background-size: cover;
+        }
+
+        .wrap { max-width: 1100px; margin: 0 auto; }
+
+        .container { background: var(--card); padding: 20px; border-radius: 12px; box-shadow: 0 6px 18px rgba(16,24,40,0.06); }
+
+        header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+
+        h1 { margin: 0; font-size: 1.25rem; color: var(--accent); }
+
+        .controls { display:flex; gap:8px; align-items:center; }
+
+        .btn { background: var(--accent); color: #fff; border: none; padding: 8px 12px; border-radius: 8px; text-decoration: none; font-weight: 600; cursor: pointer; }
+        .btn.secondary { background: #e6eefc; color: var(--accent); }
+        .btn.info { background: #17a2b8; }
+        .btn.success { background: #22c55e; }
+        .btn.gray { background: #6c757d; }
+        .btn.danger { background: #dc3545; }
+        .btn:hover { filter: brightness(0.95); }
+
+        form { display: flex; flex-direction: column; gap: 20px; }
+        .form-section { border: 1px solid #eef2ff; padding: 18px; border-radius: 10px; background: linear-gradient(180deg, var(--glass), rgba(255,255,255,0.95)); }
+        .form-group { display: flex; flex-direction: column; gap: 8px; }
+        label { font-weight: 700; color: #0f172a; }
+        input[type="text"], input[type="password"], input[type="number"] { padding: 10px; border: 1px solid #e6eefc; border-radius: 8px; font-size: 1em; }
+
+        .flash-success { background-color: #d4edda; color: #155724; padding: 10px; border-radius: 8px; margin-bottom: 12px; text-align:center; }
+        .flash-danger { background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 8px; margin-bottom: 12px; text-align:center; }
+
+        .mailbox-entries { display: flex; flex-direction: column; gap: 12px; }
+        .mailbox-entry { display: grid; grid-template-columns: 1fr 2fr auto; gap: 10px; align-items: center; }
+
+        .remove-btn { background: #dc3545; color: white; border: none; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+        .remove-btn:hover { background: #c82333; }
+
+        .text-green { color: var(--success); font-weight: 700; }
+        .text-red { color: #dc2626; font-weight: 700; }
+
+        pre { font-family: "SF Mono", "Fira Code", Consolas, monospace; }
+
+        @media (max-width: 720px) {
+            .mailbox-entry { grid-template-columns: 1fr; }
+            header { flex-direction: column; align-items: flex-start; }
+            .controls { width: 100%; display:flex; gap:8px; justify-content:flex-start; }
+        }
+        /* Statistics-specific styles (moved from statistics.html) */
+        .summary { display: flex; gap: 12px; align-items: center; margin-bottom: 18px; }
+        .last-updated { color: var(--muted); font-size: 0.9rem; }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+
+        .card { background: var(--card); border-radius: 12px; padding: 14px; box-shadow: 0 6px 18px rgba(16,24,40,0.06); display: flex; flex-direction: column; gap: 8px; }
+        .card .title { color: var(--muted); font-size: 0.85rem; }
+        .card .value { font-size: 1.4rem; font-weight: 700; color: #0f172a; }
+
+        .sub { color: var(--muted); font-size: 0.85rem; }
+        .row { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+        .mini { display: flex; gap: 8px; align-items: center; }
+        .badge { background: #eefaf1; color: var(--success); padding: 4px 8px; border-radius: 999px; font-weight: 700; font-size: 0.85rem; }
+
+        .raw-area { margin-top: 14px; border-radius: 8px; overflow: hidden; }
+        .raw-area pre { margin: 0; background: #0b1220; color: #e6eef6; padding: 12px; font-family: "SF Mono", "Fira Code", Consolas, monospace; max-height: 320px; overflow: auto; }
+
+        .footer { margin-top: 14px; color: var(--muted); font-size: 0.9rem; }
+        .button-area { margin-top: 14px; }
+
+        @media (max-width:520px) {
+            header { flex-direction: column; align-items: flex-start; gap: 8px; }
+            .summary { flex-direction: column; align-items: flex-start; }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="container">
+            {% block page_header %}{% endblock %}
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="flash-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

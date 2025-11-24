@@ -109,6 +109,24 @@
                     }
                 ]
             }
+        },
+        {
+            "title": "O365 Auth",
+            "main": {
+                "display_value": {
+                    "numerator_field": "O365.token_acquisition.successes",
+                    "denominator_field": "email.token_acquisition.attempts",
+                    "unit": "successful token acquisitions"
+                }
+            },
+            "sub_fields": {
+                "display_value": [
+                    {
+                        "field": "O365.token_acquisition.failures",
+                        "unit": "failed token acquisitions"
+                    }
+                ]
+            }
         }
     ]
 }

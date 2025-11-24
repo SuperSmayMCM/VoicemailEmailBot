@@ -1,427 +1,276 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends 'base.html' %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Script Statistics</title>
-    <style>
-        :root {
-            --bg: #f4f6fb;
-            --card: #ffffff;
-            --muted: #6b7280;
-            --accent: #2563eb;
-            --success: #16a34a;
-            --glass: rgba(255, 255, 255, 0.6);
-        }
+{% block title %}Script Statistics{% endblock %}
 
-        html,
-        body {
-            height: 100%;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background: linear-gradient(180deg, var(--bg), #eef2ff);
-            color: #111827;
-            margin: 0;
-            padding: 24px;
-        }
-
-        .wrap {
-            max-width: 1100px;
-            margin: 0 auto;
-        }
-
-        header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            margin-bottom: 18px;
-        }
-
-        h1 {
-            margin: 0;
-            font-size: 1.25rem;
-            color: var(--accent);
-        }
-
-        .controls {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-
-        .btn {
-            background: var(--accent);
-            color: #fff;
-            border: none;
-            padding: 8px 12px;
-            border-radius: 8px;
-            text-decoration: none;
-            font-weight: 600;
-            cursor: pointer;
-        }
-
-        .btn.secondary {
-            background: #e6eefc;
-            color: var(--accent);
-        }
-
-        .summary {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            margin-bottom: 18px;
-        }
-
-        .last-updated {
-            color: var(--muted);
-            font-size: 0.9rem;
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 14px;
-        }
-
-        .card {
-            background: var(--card);
-            border-radius: 12px;
-            padding: 14px;
-            box-shadow: 0 6px 18px rgba(16, 24, 40, 0.06);
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .card .title {
-            color: var(--muted);
-            font-size: 0.85rem;
-        }
-
-        .card .value {
-            font-size: 1.4rem;
-            font-weight: 700;
-            color: #0f172a;
-        }
-
-        .sub {
-            color: var(--muted);
-            font-size: 0.85rem;
-        }
-
-        .row {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .mini {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-
-        .badge {
-            background: #eefaf1;
-            color: var(--success);
-            padding: 4px 8px;
-            border-radius: 999px;
-            font-weight: 700;
-            font-size: 0.85rem;
-        }
-
-        .raw-area {
-            margin-top: 14px;
-            border-radius: 8px;
-            overflow: hidden;
-        }
-
-        pre {
-            margin: 0;
-            background: #0b1220;
-            color: #e6eef6;
-            padding: 12px;
-            font-family: "SF Mono", "Fira Code", Consolas, monospace;
-            max-height: 320px;
-            overflow: auto;
-        }
-
-        .footer {
-            margin-top: 14px;
-            color: var(--muted);
-            font-size: 0.9rem;
-        }
-
-        .button-area {
-            margin-top: 14px;
-        }
-
-        @media (max-width:520px) {
-            header {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 8px;
-            }
-
-            .summary {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-        }
-    </style>
-</head>
-
-<body>
-    <div class="wrap">
-        <header>
-            <div>
-                <h1>Script Execution Statistics</h1>
-                <div class="summary">
-                    <div class="last-updated" id="last-updated">Loading…</div>
-                </div>
-            </div>
-            <div class="controls">
-                <a href="/" class="btn secondary">Back to Settings</a>
-                <button id="refreshBtn" class="btn">Refresh</button>
-            </div>
-        </header>
-
-        <main>
-            <section class="stats-grid" id="statsGrid">
-                <!-- cards injected here -->
-            </section>
-
-            <div class="button-area"></div>
-
-            <div class="raw-area" id="rawArea" hidden>
-                <pre id="rawPre">Loading statistics...</pre>
-            </div>
-
-            <div class="footer">Auto-refresh every 10s. If the server returns plain text, the raw output will appear
-                above.</div>
-        </main>
+{% block page_header %}
+<header>
+    <div>
+        <h1>Script Execution Statistics</h1>
+        <div class="summary">
+            <div class="last-updated" id="last-updated">Loading…</div>
+        </div>
     </div>
+    <div class="controls">
+        <a href="/" class="btn secondary">Back to Settings</a>
+        <button id="refreshBtn" class="btn">Refresh</button>
+    </div>
+</header>
+{% endblock %}
 
-    <script>
-        const statsGrid = document.getElementById('statsGrid');
-        const rawArea = document.getElementById('rawArea');
-        const rawPre = document.getElementById('rawPre');
-        const lastUpdated = document.getElementById('last-updated');
-        const refreshBtn = document.getElementById('refreshBtn');
-        const buttonArea = document.querySelector('.button-area');
+{% block content %}
+    <main>
+        <section class="stats-grid" id="statsGrid">
+            <!-- cards injected here -->
+        </section>
+
+        <div class="button-area"></div>
+
+        <div class="raw-area" id="rawArea" hidden>
+            <pre id="rawPre">Loading statistics...</pre>
+        </div>
+
+        <div class="footer">Auto-refresh every 10s. If the server returns plain text, the raw output will appear
+            above.</div>
+    </main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const statsGrid = document.getElementById('statsGrid');
+    const rawArea = document.getElementById('rawArea');
+    const rawPre = document.getElementById('rawPre');
+    const lastUpdated = document.getElementById('last-updated');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const buttonArea = document.querySelector('.button-area');
 
 
-        // store latest JSON and raw view state so raw JSON can remain open across refreshes
-        let latestJsonData = null;
-        let pageMap = {}
-        let rawVisible = false;
+    // store latest JSON and raw view state so raw JSON can remain open across refreshes
+    let latestJsonData = null;
+    let pageMap = {}
+    let rawVisible = false;
 
-        function fmtNumber(n) { return (n === undefined || n === null) ? '—' : n.toLocaleString(); }
+    function fmtNumber(n) { return (n === undefined || n === null) ? '—' : n.toLocaleString(); }
 
-        function fmtBytes(b) { if (!b && b !== 0) return '—'; const mb = b / 1024 / 1024; return mb >= 1 ? mb.toFixed(2) + ' MB' : (b / 1024).toFixed(1) + ' KB'; }
+    function fmtBytes(b) { if (!b && b !== 0) return '—'; const mb = b / 1024 / 1024; return mb >= 1 ? mb.toFixed(2) + ' MB' : (b / 1024).toFixed(1) + ' KB'; }
 
-        function fmtDate(timestamp) {
-            const now = new Date(timestamp * 1000);
-            const month = (now.getMonth() + 1).toString().padStart(2, '0'); // Months are 0-indexed, so add 1
-            const day = now.getDate().toString().padStart(2, '0');
-            const year = now.getFullYear().toString().slice(-2); // Get last two digits of the year
+    function fmtDate(timestamp) {
+        const now = new Date(timestamp * 1000);
+        const month = (now.getMonth() + 1).toString().padStart(2, '0'); // Months are 0-indexed, so add 1
+        const day = now.getDate().toString().padStart(2, '0');
+        const year = now.getFullYear().toString().slice(-2); // Get last two digits of the year
 
-            const hours = now.getHours().toString().padStart(2, '0');
-            const minutes = now.getMinutes().toString().padStart(2, '0');
-            const seconds = now.getSeconds().toString().padStart(2, '0');
+        const hours = now.getHours().toString().padStart(2, '0');
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        const seconds = now.getSeconds().toString().padStart(2, '0');
 
-            const formattedDate = `${month}/${day}/${year} at ${hours}:${minutes}:${seconds}`;
+        const formattedDate = `${month}/${day}/${year} at ${hours}:${minutes}:${seconds}`;
 
-            return formattedDate;
-        }
+        return formattedDate;
+    }
 
-        function buildCard(title, value, sub) {
-            const el = document.createElement('div'); el.className = 'card';
-            el.innerHTML = `<div class="title">${title}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}`;
-            return el;
-        }
+    function buildCard(title, value, sub) {
+        const el = document.createElement('div'); el.className = 'card';
+        el.innerHTML = `<div class="title">${title}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}`;
+        return el;
+    }
 
-        async function fetchStatistics() {
-            try {
-                const res = await fetch('/get_statistics_data');
-                if (!res.ok) { throw new Error('Server: ' + res.status); }
+    async function fetchStatistics() {
+        try {
+            const res = await fetch('/get_statistics_data');
+            if (!res.ok) { throw new Error('Server: ' + res.status); }
 
-                await fetch_stats_page_map();
+            await fetch_stats_page_map();
 
-                const ct = res.headers.get('content-type') || '';
-                if (ct.includes('application/json')) {
-                    const data = await res.json();
-                    renderFromJson(data);
-                } else {
-                    // try to parse as JSON text, otherwise show raw text
-                    const text = await res.text();
-                    try { const data = JSON.parse(text); renderFromJson(data); }
-                    catch (e) { showRaw(text); }
-                }
-                const now = new Date(); lastUpdated.textContent = 'Last updated: ' + now.toLocaleString();
-            } catch (err) {
-
-                showRaw('Error fetching statistics: ' + err.message);
-                lastUpdated.textContent = 'Last update: failed';
+            const ct = res.headers.get('content-type') || '';
+            if (ct.includes('application/json')) {
+                const data = await res.json();
+                renderFromJson(data);
+            } else {
+                // try to parse as JSON text, otherwise show raw text
+                const text = await res.text();
+                try { const data = JSON.parse(text); renderFromJson(data); }
+                catch (e) { showRaw(text); }
             }
+            const now = new Date(); lastUpdated.textContent = 'Last updated: ' + now.toLocaleString();
+        } catch (err) {
+
+            showRaw('Error fetching statistics: ' + err.message);
+            lastUpdated.textContent = 'Last update: failed';
+        }
+    }
+
+    async function fetch_stats_page_map() {
+        try {
+            const res = await fetch('/stats_page_mapping');
+            if (!res.ok) { throw new Error('Server: ' + res.status); }
+            const jsonData = await res.json();
+            pageMap = jsonData
+        } catch (e) {
+            // Do nothing. Stats simply display in the automatic form
+            console.error('Error fetching stats page map:', e);
+            pageMap = {}
+        }
+    }
+
+    function addRawToggle() {
+        buttonArea.innerHTML = '';
+        const rawCard = document.createElement('div'); rawCard.className = 'card';
+        const btn = document.createElement('button'); btn.className = 'btn secondary'; btn.textContent = rawVisible ? 'Hide raw JSON' : 'View raw JSON';
+        btn.onclick = () => {
+            rawVisible = !rawVisible;
+            rawArea.hidden = !rawVisible;
+            btn.textContent = rawVisible ? 'Hide raw JSON' : 'View raw JSON';
+            if (rawVisible && latestJsonData) { rawPre.textContent = JSON.stringify(latestJsonData, null, 2); }
+        };
+        rawCard.appendChild(btn);
+        buttonArea.appendChild(rawCard);
+    }
+
+    function showRaw(text) {
+        rawArea.hidden = false;
+        rawPre.textContent = text;
+        statsGrid.innerHTML = '';
+        rawVisible = true;
+        addRawToggle();
+    }
+
+    function buildStringDisplayValue(data, field, unit, conversion = "") {
+        if (!field || typeof field !== 'string') return '—' + (unit ? ' ' + unit : '');
+        const field_path = field.split('.');
+        let value = data;
+        for (let part of field_path) {
+            if (value === undefined || value === null) { value = undefined; break; }
+            value = value[part];
         }
 
-        async function fetch_stats_page_map() {
-            try {
-                const res = await fetch('/stats_page_mapping');
-                if (!res.ok) { throw new Error('Server: ' + res.status); }
-                const jsonData = await res.json();
-                pageMap = jsonData
-            } catch (e) {
-                // Do nothing. Stats simply display in the automatic form
-                console.error('Error fetching stats page map:', e);
-                pageMap = {}
-            }
+        let formatted_value = fmtNumber(value);
+
+        if (conversion === "bytes_to_human_readable") {
+            formatted_value = fmtBytes(value);
+        }
+        if (conversion === "timestamp_range_to_human_readable") {
+            formatted_value = fmtDate(value);
         }
 
-        function showRaw(text) { rawArea.hidden = false; rawPre.textContent = text; statsGrid.innerHTML = ''; rawVisible = true; buttonArea.innerHTML = '';}
+        return formatted_value + (unit ? ' ' + unit : '');
+    }
 
-        function buildStringDisplayValue(data, field, unit, conversion = "") {
-            const field_path = field.split('.');
-            let value = data;
-            field_path.forEach(part => {
-                if (value) value = value[part];
-            });
-
-            formatted_value = fmtNumber(value);
-
-            if (conversion === "bytes_to_human_readable") {
-                formatted_value = fmtBytes(value);
-            }
-            if (conversion === "timestamp_range_to_human_readable") {
-                formatted_value = fmtDate(value);
-            }
-
-            return formatted_value + ' ' + (unit || '');
+    function buildStringDisplayRatio(data, numerator_field, denominator_field, unit) {
+        if (!numerator_field || !denominator_field) return '—';
+        const num_path = numerator_field.split('.');
+        const denom_path = denominator_field.split('.');
+        let numerator = data;
+        let denominator = data;
+        for (let part of num_path) {
+            if (numerator === undefined || numerator === null) { numerator = undefined; break; }
+            numerator = numerator[part];
         }
-
-        function buildStringDisplayRatio(data, numerator_field, denominator_field, unit) {
-            const num_path = numerator_field.split('.');
-            const denom_path = denominator_field.split('.');
-            let numerator = data;
-            let denominator = data;
-            num_path.forEach(part => {
-                if (numerator) numerator = numerator[part];
-            });
-            denom_path.forEach(part => {
-                if (denominator) denominator = denominator[part];
-            });
-            return `${fmtNumber(numerator)}/${fmtNumber(denominator)} ${unit || ''}`;
+        for (let part of denom_path) {
+            if (denominator === undefined || denominator === null) { denominator = undefined; break; }
+            denominator = denominator[part];
         }
+        return `${fmtNumber(numerator)}/${fmtNumber(denominator)} ${unit || ''}`;
+    }
 
-        async function renderFromJson(data) {
-            // update stored JSON
-            latestJsonData = data;
-            // if user hasn't opened the raw view, hide the raw area
-            if (!rawVisible) { rawArea.hidden = true; rawPre.textContent = ''; }
+    async function renderFromJson(data) {
+        // update stored JSON
+        latestJsonData = data;
+        // if user hasn't opened the raw view, hide the raw area
+        if (!rawVisible) { rawArea.hidden = true; rawPre.textContent = ''; }
 
-            
 
-            statsGrid.innerHTML = '';
+        statsGrid.innerHTML = '';
 
-            // If cards not defined, show raw JSON
-            if (!pageMap.cards) {
-                rawVisible = true;
-                rawArea.hidden = !rawVisible;
-                rawPre.textContent = JSON.stringify(latestJsonData, null, 2);
-                buttonArea.innerHTML = '';
-                return;
-            }
-
+        // If cards not defined, show raw JSON but still render the raw toggle button
+        if (!pageMap.cards) {
+            rawVisible = true;
+            rawArea.hidden = !rawVisible;
+            rawPre.textContent = JSON.stringify(latestJsonData, null, 2);
+            // leave statsGrid empty
+        } else {
             // Create page from mapping
             pageMap.cards.forEach(element => {
 
-                let title = element.title || key;
-                let main = "No Data";
-                if (element.main) {
-                    if (element.main.display_value) {
-                        main = buildStringDisplayValue(
-                            data,
-                            element.main.display_value.field,
-                            element.main.display_value.unit,
-                            element.main.display_value.conversion || ""
-                        );
-                    } else if (element.main.display_ratio) {
-                        main = buildStringDisplayRatio(
-                            data,
-                            element.main.display_ratio.numerator_field,
-                            element.main.display_ratio.denominator_field,
-                            element.main.display_ratio.unit
-                        );
+            let title = element.title || key;
+            let main = "No Data";
+            if (element.main) {
+                if (element.main.display_value) {
+                    main = buildStringDisplayValue(
+                        data,
+                        element.main.display_value.field,
+                        element.main.display_value.unit,
+                        element.main.display_value.conversion || ""
+                    );
+                } else if (element.main.display_ratio) {
+                    main = buildStringDisplayRatio(
+                        data,
+                        element.main.display_ratio.numerator_field,
+                        element.main.display_ratio.denominator_field,
+                        element.main.display_ratio.unit
+                    );
+                }
+            }
+            let sub_items = [];
+            if (element.sub_fields) {
+                Object.entries(element.sub_fields).forEach(([sub_key, sub_field]) => {
+
+                    if (sub_key == 'display_value') {
+
+                        sub_field.forEach(sf => {
+                            const sub_value = buildStringDisplayValue(
+                                data,
+                                sf.field,
+                                sf.unit,
+                                sf.conversion || ""
+                            );
+                            sub_items.push(sub_value);
+                        });
+
+                    } else if (sub_key == 'display_ratio') {
+                        sub_field.forEach(sf => {
+                            const sub_value = buildStringDisplayRatio(
+                                data,
+                                sf.numerator_field,
+                                sf.denominator_field,
+                                sf.unit
+                            );
+                            sub_items.push(sub_value);
+                        });
                     }
-                }
-                let sub_items = [];
-                if (element.sub_fields) {
-                    Object.entries(element.sub_fields).forEach(([sub_key, sub_field]) => {
+                });
+            }
+            let sub = '';
+            if (sub_items.length > 0) {
+                sub = sub_items.join(' · ');
+            }
+            const card = buildCard(title, main, sub);
+            statsGrid.appendChild(card);
+        });
 
-                        if (sub_key == 'display_value') {
+        // small raw dump button/area: toggle to view raw JSON (always add this control)
+        buttonArea.innerHTML = '';
+        const rawCard = document.createElement('div'); rawCard.className = 'card';
+        const btn = document.createElement('button'); btn.className = 'btn secondary'; btn.textContent = rawVisible ? 'Hide raw JSON' : 'View raw JSON';
+        btn.onclick = () => {
+            rawVisible = !rawVisible;
+            rawArea.hidden = !rawVisible;
+            btn.textContent = rawVisible ? 'Hide raw JSON' : 'View raw JSON';
+            if (rawVisible && latestJsonData) { rawPre.textContent = JSON.stringify(latestJsonData, null, 2); }
+        };
+        rawCard.appendChild(btn);
+        buttonArea.appendChild(rawCard);
 
-                            sub_field.forEach(sf => {
-                                const sub_value = buildStringDisplayValue(
-                                    data,
-                                    sf.field,
-                                    sf.unit,
-                                    sf.conversion || ""
-                                );
-                                sub_items.push(sub_value);
-                            });
+    }
+}
 
-                        } else if (sub_key == 'display_ratio') {
-                            sub_field.forEach(sf => {
-                                const sub_value = buildStringDisplayRatio(
-                                    data,
-                                    sf.numerator_field,
-                                    sf.denominator_field,
-                                    sf.unit
-                                );
-                                sub_items.push(sub_value);
-                            });
-                        }
-                    });
-                }
-                let sub = '';
-                if (sub_items.length > 0) {
-                    sub = sub_items.join(' · ');
-                }
-                const card = buildCard(title, main, sub);
-                statsGrid.appendChild(card);
-            });
+    // initial fetch + interval
+    fetchStatistics();
+    const intervalId = setInterval(fetchStatistics, 10000);
 
-            // small raw dump button/area: toggle to view raw JSON
-            buttonArea.innerHTML = '';
-            const rawCard = document.createElement('div'); rawCard.className = 'card';
-            const btn = document.createElement('button'); btn.className = 'btn secondary'; btn.textContent = rawVisible ? 'Hide raw JSON' : 'View raw JSON';
-            btn.onclick = () => {
-                rawVisible = !rawVisible;
-                rawArea.hidden = !rawVisible;
-                btn.textContent = rawVisible ? 'Hide raw JSON' : 'View raw JSON';
-                if (rawVisible && latestJsonData) { rawPre.textContent = JSON.stringify(latestJsonData, null, 2); }
-            };
-            rawCard.appendChild(btn);
-            buttonArea.appendChild(rawCard);
+    // UI handlers
+    refreshBtn.addEventListener('click', () => { fetchStatistics(); });
 
-        }
-
-        // initial fetch + interval
-        fetchStatistics();
-        const intervalId = setInterval(fetchStatistics, 10000);
-
-        // UI handlers
-        refreshBtn.addEventListener('click', () => { fetchStatistics(); });
-
-        // cleanup on unload (if SPA), not strictly necessary here
-        window.addEventListener('beforeunload', () => clearInterval(intervalId));
-    </script>
-</body>
-
-</html>
+    // cleanup on unload (if SPA), not strictly necessary here
+    window.addEventListener('beforeunload', () => clearInterval(intervalId));
+</script>
+{% endblock %}

@@ -1,66 +1,38 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voicemail Email Config</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f4f4f9; color: #333; margin: 0; padding: 20px; }
-        .container { max-width: 800px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        h1, h2 { color: #0056b3; }
-        h1 { text-align: center; }
-        form { display: flex; flex-direction: column; gap: 20px; }
-        .form-section { border: 1px solid #ddd; padding: 20px; border-radius: 5px; }
-        .form-group { display: flex; flex-direction: column; gap: 5px; }
-        label { font-weight: bold; }
-        input[type="text"], input[type="password"] { padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 1em; }
-        .button { background-color: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 1em; text-align: center; }
-        .button:hover { background-color: #0056b3; }
-        .flash-success { background-color: #d4edda; color: #155724; padding: 10px; border-radius: 4px; margin-bottom: 20px; text-align: center; }
-        .flash-danger { background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px; margin-bottom: 15px; text-align: center; }
-        .mailbox-entries { display: flex; flex-direction: column; gap: 15px; }
-        .mailbox-entry { display: grid; grid-template-columns: 1fr 2fr auto; gap: 10px; align-items: center; }
-        .remove-btn { background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
-        .remove-btn:hover { background: #c82333; }
-        #add-mailbox-btn { background: #28a745; }
-        #add-mailbox-btn:hover { background: #218838; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-            <h1>Voicemail Email Configuration</h1>
-            <div>
-                <a href="/logs" class="button" style="background-color: #17a2b8;">View Logs</a>
-                <a href="/statistics" class="button" style="background-color: #52b817;">View Statistics</a>
-                <a href="/logout" class="button" style="background-color: #6c757d;">Logout</a>
-            </div>
+    {% extends 'base.html' %}
+
+    {% block title %}Voicemail Email Config{% endblock %}
+
+    {% block page_header %}
+    <header>
+        <h1>Voicemail Email Configuration</h1>
+        <div class="controls">
+            <a href="/logs" class="btn info">View Logs</a>
+            <a href="/statistics" class="btn success">View Statistics</a>
+            <a href="/logout" class="btn gray">Logout</a>
         </div>
+    </header>
+    {% endblock %}
 
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="flash-{{ category }}">{{ message }}</div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-
+    {% block content %}
         <div class="form-section">
             <h2>Scheduler Control</h2>
             <div style="display: flex; gap: 10px; align-items: center;">
                 <form action="/toggle_scheduler" method="post" style="display: inline;">
                     {% if scheduler_running %}
                         <input type="hidden" name="action" value="stop">
-                        <button type="submit" class="button" style="background-color: #dc3545;">Stop Scheduler</button>
+                        <button type="submit" class="btn danger">Stop Scheduler</button>
                     {% else %}
                         <input type="hidden" name="action" value="start">
-                        <button type="submit" class="button" style="background-color: #28a745;">Start Scheduler</button>
+                        <button type="submit" class="btn success">Start Scheduler</button>
                     {% endif %}
                 </form>
                 <form action="/run_now" method="post" style="display: inline;">
-                    <button type="submit" class="button">Run Script Now</button>
+                    <button type="submit" class="btn secondary">Run Script Now</button>
                 </form>
-                <p style="margin: 0;">Status: <strong style="color: {{ 'green' if scheduler_running else 'red' }};">{{ 'Running' if scheduler_running else 'Stopped' }}</strong></p>
+                <p style="margin: 0;">Status: <strong class="{{ 'text-green' if scheduler_running else 'text-red' }}">{{ 'Running' if scheduler_running else 'Stopped' }}</strong></p>
             </div>
         </div>
 
@@ -88,7 +60,7 @@
                      <input type="text" id="new_mailbox_emails" name="new_mailbox_emails" placeholder="comma-separated emails">
                 </div>
                 <br>
-                <button type="submit" class="button">Save All Settings</button>
+                <button type="submit" class="btn">Save All Settings</button>
             </div>
 
             <div class="form-section">
@@ -118,8 +90,6 @@
                     <input type="password" id="web_password_confirm" name="web_password_confirm">
                 </div>
             </div>
-
-            
 
             <div class="form-section">
                 <h2>FTP Settings</h2>
@@ -169,13 +139,14 @@
                 </div>
             </div>
 
-            <button type="submit" class="button">Save All Settings</button>
+            <button type="submit" class="btn">Save All Settings</button>
         </form>
-    </div>
 
-    <p>Vibe coded with ❤️ by Smay. I only know how some of this works. Thanks Gemini!</p>
-    <p><small>Commit ID: {{ git_commit_id }}</small></p>
+        <p>Vibe coded with ❤️ by Smay. I only know how some of this works. Thanks Gemini!</p>
+        <p><small>Commit ID: {{ git_commit_id }}</small></p>
+    {% endblock %}
 
+    {% block scripts %}
     <script>
         function removeMailbox(entryId) {
             const entry = document.getElementById(entryId);
@@ -184,5 +155,5 @@
             }
         }
     </script>
-</body>
-</html>
+    {% endblock %}
+                    <label for="web_password_confirm">Confirm New Password</label>

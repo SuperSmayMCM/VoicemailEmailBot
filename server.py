@@ -21,6 +21,9 @@ MAILBOX_CUSTOM_NAMES_PATH = 'custom_mailbox_names.json'
 
 last_error_notification_time = 0
 ERROR_NOTIFICATION_COOLDOWN = 86400  # 1 day in seconds
+ERROR_JSON_LOG_PATH = 'error_log.json'
+ERROR_JSON_LOG_MAX_ENTRIES = 100  # Max number of error entries to keep in the JSON log
+ERROR_JSON_LOG_COOLDOWN = 3600  # 1 hour cooldown for logging the same error to JSON
 
 git_commit_id = "unknown"
 # Try to get the current git commit ID
@@ -202,6 +205,9 @@ def run_main_script(manual_trigger=False):
                 subject=f"Error in {MAIN_SCRIPT} (returncode={last_exit_code})",
                 HTMLmessage=f"<pre>{current_web_log}</pre>"
             )
+            print("[Server] Error detected. Logging error to JSON...")
+            log_error_to_json(current_web_log)
+            print("[Server] Error logging complete.")
 
 def scheduler_loop():
     """The background thread that runs the script periodically."""
@@ -330,6 +336,38 @@ def send_error_notification(subject, HTMLmessage):
         print("[Notification] Error notification email sent.")
     except Exception as e:
         print(f"[Notification] Failed to send error notification email: {e}")
+
+def log_error_to_json(error_message):
+    """Logs an error message to a JSON file with a timestamp, while respecting cooldown and max entries."""
+    current_time = time.time()
+
+    # Load existing log entries
+    if os.path.exists(ERROR_JSON_LOG_PATH):
+        with open(ERROR_JSON_LOG_PATH, 'r') as f:
+            try:
+                log_entries = json.load(f)
+            except json.JSONDecodeError:
+                log_entries = []
+    else:
+        log_entries = []
+
+    # Check cooldown for the last error message
+    if current_time - log_entries[-1]['timestamp'] < ERROR_JSON_LOG_COOLDOWN:
+        print("[JSON Log] Skipping logging to JSON due to cooldown for this error message.")
+        return
+
+    # Add new log entry
+    log_entries.append({
+        'timestamp': current_time,
+        'error_message': error_message
+    })
+
+    # Keep only the most recent entries up to the max limit
+    log_entries = sorted(log_entries, key=lambda x: x['timestamp'], reverse=True)[:ERROR_JSON_LOG_MAX_ENTRIES]
+
+    # Save back to JSON file
+    with open(ERROR_JSON_LOG_PATH, 'w') as f:
+        json.dump(log_entries, f, indent=4)
 
 # --- Flask Routes ---
 def load_config():

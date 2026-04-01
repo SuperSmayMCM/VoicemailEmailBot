@@ -5,6 +5,7 @@ scanned_files.json
 mailbox_emails.json
 custom_mailbox_names.json
 statistics.json
+error_log.json
 msal*
 temp/
 .DS_Store

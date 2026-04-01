@@ -422,6 +422,12 @@ def get_stats_page_map():
             return json.load(f)
     return {}
 
+def get_error_log():
+    """Loads error log entries from error_log.json."""
+    if os.path.exists(ERROR_JSON_LOG_PATH):
+        with open(ERROR_JSON_LOG_PATH, 'r') as f:
+            return json.load(f)
+    return []
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -503,6 +509,13 @@ def get_statistics_data():
         return "Not authorized", 401
     with log_lock:
         return get_statistics()
+    
+@app.route('/get_error_log_data')
+def get_error_log_data():
+    if not session.get('logged_in'):
+        return "Not authorized", 401
+    with log_lock:
+        return get_error_log()
 
 @app.route('/save', methods=['POST'])
 def save_settings():

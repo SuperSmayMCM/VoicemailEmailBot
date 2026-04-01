@@ -29,6 +29,9 @@
             <pre id="rawPre">Loading statistics...</pre>
         </div>
 
+        <div class="raw-area" id="errorRawArea" hidden>
+            <pre id="errorRawPre">Loading error log...</pre>
+        </div>
         <div class="footer">Auto-refresh every 10s. If the server returns plain text, the raw output will appear
             above.</div>
     </main>
@@ -38,7 +41,9 @@
 <script>
     const statsGrid = document.getElementById('statsGrid');
     const rawArea = document.getElementById('rawArea');
+    const errorRawArea = document.getElementById('errorRawArea');
     const rawPre = document.getElementById('rawPre');
+    const errorRawPre = document.getElementById('errorRawPre');
     const lastUpdated = document.getElementById('last-updated');
     const refreshBtn = document.getElementById('refreshBtn');
     const buttonArea = document.querySelector('.button-area');
@@ -46,8 +51,10 @@
 
     // store latest JSON and raw view state so raw JSON can remain open across refreshes
     let latestJsonData = null;
+    let latestErrorJsonData = null;
     let pageMap = {}
     let rawVisible = false;
+    let errorRawVisible = false;
 
     function fmtNumber(n) { return (n === undefined || n === null) ? '—' : n.toLocaleString(); }
 
@@ -119,18 +126,54 @@
         }
     }
 
+    async function fetchErrorLog() {
+        try {
+            const res = await fetch('/get_error_log_data');
+            if (!res.ok) { throw new Error('Server: ' + res.status); }
+
+            const ct = res.headers.get('content-type') || '';
+            if (ct.includes('application/json')) {
+                const data = await res.json();
+                latestErrorJsonData = data;
+                if (errorRawVisible) { errorRawPre.textContent = JSON.stringify(latestErrorJsonData, null, 2); }
+            } else {
+                const text = await res.text();
+                try { const data = JSON.parse(text); latestErrorJsonData = data; if (errorRawVisible) { errorRawPre.textContent = JSON.stringify(latestErrorJsonData, null, 2); } }
+                catch (e) { showErrorRaw(text); }
+            }
+        } catch (err) {
+            showErrorRaw('Error fetching error log: ' + err.message);
+        }
+    }
+
     function addRawToggle() {
+        // Build both buttons: one for stats JSON, one for error log
         buttonArea.innerHTML = '';
-        const rawCard = document.createElement('div'); rawCard.className = 'card';
-        const btn = document.createElement('button'); btn.className = 'btn secondary'; btn.textContent = rawVisible ? 'Hide raw JSON' : 'View raw JSON';
-        btn.onclick = () => {
+
+        const statsCard = document.createElement('div'); statsCard.className = 'card';
+        const statsBtn = document.createElement('button'); statsBtn.className = 'btn secondary'; statsBtn.textContent = rawVisible ? 'Hide raw JSON' : 'View raw JSON';
+        statsBtn.onclick = () => {
             rawVisible = !rawVisible;
             rawArea.hidden = !rawVisible;
-            btn.textContent = rawVisible ? 'Hide raw JSON' : 'View raw JSON';
+            statsBtn.textContent = rawVisible ? 'Hide raw JSON' : 'View raw JSON';
             if (rawVisible && latestJsonData) { rawPre.textContent = JSON.stringify(latestJsonData, null, 2); }
         };
-        rawCard.appendChild(btn);
-        buttonArea.appendChild(rawCard);
+        statsCard.appendChild(statsBtn);
+        buttonArea.appendChild(statsCard);
+
+        const errorCard = document.createElement('div'); errorCard.className = 'card';
+        const errorBtn = document.createElement('button'); errorBtn.className = 'btn secondary'; errorBtn.textContent = errorRawVisible ? 'Hide error log' : 'View error log';
+        errorBtn.onclick = async () => {
+            errorRawVisible = !errorRawVisible;
+            errorRawArea.hidden = !errorRawVisible;
+            errorBtn.textContent = errorRawVisible ? 'Hide error log' : 'View error log';
+            if (errorRawVisible) {
+                if (latestErrorJsonData) { errorRawPre.textContent = JSON.stringify(latestErrorJsonData, null, 2); }
+                else { await fetchErrorLog(); }
+            }
+        };
+        errorCard.appendChild(errorBtn);
+        buttonArea.appendChild(errorCard);
     }
 
     function showRaw(text) {
@@ -138,6 +181,13 @@
         rawPre.textContent = text;
         statsGrid.innerHTML = '';
         rawVisible = true;
+        addRawToggle();
+    }
+
+    function showErrorRaw(text) {
+        errorRawArea.hidden = false;
+        errorRawPre.textContent = text;
+        errorRawVisible = true;
         addRawToggle();
     }
 
@@ -198,7 +248,7 @@
             // Create page from mapping
             pageMap.cards.forEach(element => {
 
-            let title = element.title || key;
+            let title = element.title || '';
             let main = "No Data";
             if (element.main) {
                 if (element.main.display_value) {
@@ -254,18 +304,8 @@
             statsGrid.appendChild(card);
         });
 
-        // small raw dump button/area: toggle to view raw JSON (always add this control)
-        buttonArea.innerHTML = '';
-        const rawCard = document.createElement('div'); rawCard.className = 'card';
-        const btn = document.createElement('button'); btn.className = 'btn secondary'; btn.textContent = rawVisible ? 'Hide raw JSON' : 'View raw JSON';
-        btn.onclick = () => {
-            rawVisible = !rawVisible;
-            rawArea.hidden = !rawVisible;
-            btn.textContent = rawVisible ? 'Hide raw JSON' : 'View raw JSON';
-            if (rawVisible && latestJsonData) { rawPre.textContent = JSON.stringify(latestJsonData, null, 2); }
-        };
-        rawCard.appendChild(btn);
-        buttonArea.appendChild(rawCard);
+        // Add controls for viewing raw stats JSON and error log
+        addRawToggle();
 
     }
 }

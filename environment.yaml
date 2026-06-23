@@ -23,6 +23,7 @@ dependencies:
   - flask
   - more-itertools
   - gunicorn
+  - bcrypt
   - pip
   - pip:
       - openai-whisper

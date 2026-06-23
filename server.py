@@ -10,6 +10,7 @@ import sys
 from datetime import datetime
 import msal
 import requests
+import bcrypt
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
@@ -429,6 +430,29 @@ def get_error_log():
             return json.load(f)
     return []
 
+def authenticate(username, password):
+    """Checks if the provided username and password match the config."""
+    config = load_config()
+    if 'WEB' not in config:
+        return False
+
+    default_user = 'admin'
+    default_password = 'password'
+
+    web_user = config.get('WEB', 'user', fallback=default_user)
+    web_pass = config.get('WEB', 'password', fallback=default_password)
+    web_pass_hashed = config.get('WEB', 'password_hashed', fallback='False').lower() == 'true'
+
+    if not web_user:
+        web_user = default_user
+    if not web_pass:
+        web_pass = default_password
+
+    if web_pass_hashed:
+        return username == web_user and bcrypt.checkpw(password.encode('utf-8'), web_pass.encode('utf-8'))
+    else:
+        return username == web_user and password == web_pass
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -442,16 +466,19 @@ def login():
 
         web_user = config.get('WEB', 'user', fallback=default_user)
         web_pass = config.get('WEB', 'password', fallback=default_password)
+        web_pass_hashed = config.get('WEB', 'password_hashed', fallback='False').lower() == 'true'
 
         if not web_user:
             web_user = default_user
         if not web_pass:
             web_pass = default_password
 
-        if request.form.get('username') == web_user and request.form.get('password') == web_pass:
+        if authenticate(request.form['username'], request.form['password']):
             session['logged_in'] = True
-            if web_user == default_user and web_pass == default_password:
+            if web_user == default_user and web_pass == default_password and not web_pass_hashed:
                 flash("Please update the password to something more secure!", 'danger')
+            elif not web_pass_hashed:
+                flash("Please update your password!", 'warning')
             else:
                 flash('You were successfully logged in', 'success')
             return redirect(url_for('index'))
@@ -540,7 +567,10 @@ def save_settings():
 
     if new_password:
         if new_password == confirm_password:
-            config['WEB']['password'] = new_password
+            # Let's not just... store the password in plain text...
+            # I would never do that....
+            config['WEB']['password'] = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            config['WEB']['password_hashed'] = 'True'
         else:
             flash('New web passwords do not match.', 'danger')
             return redirect(url_for('index'))
@@ -551,6 +581,9 @@ def save_settings():
     config['FTP']['host'] = request.form.get('ftp_host', '')
     config['FTP']['user'] = request.form.get('ftp_user', '')
     if request.form.get('ftp_password'):
+        # Speaking of plain text passwords, I can't hash it here because this needs to go over FTP.
+        # So. We're just gonna pretend that it's okay.
+        # May fix eventually, but that complicates things.
         config['FTP']['password'] = request.form.get('ftp_password', '')
     config['FTP']['base_path'] = request.form.get('ftp_base_path', '')
 

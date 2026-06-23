@@ -37,6 +37,7 @@ except Exception as e:
 # --- Globals for Scheduler ---
 current_web_log = "Scheduler has not run yet."
 last_print_log = ""
+pending_error_notifications: list[tuple[str, str]] = []
 silence_message_printed = False
 scheduler_thread_instance = None
 stop_scheduler_flag = threading.Event()
@@ -200,6 +201,12 @@ def run_main_script(manual_trigger=False):
     finally:
         script_execution_lock.release()
         # Send notification to email if configured
+        if len(pending_error_notifications) > 0:
+            print("[Server] Attempting to send pending error notification emails...")
+            for subject, message in pending_error_notifications:
+                send_error_notification(subject, message, bypass_cooldown=True)
+            pending_error_notifications.clear()
+
         if stderr_had_output.is_set():
             print("[Server] Error detected. Sending error notification email...")
             send_error_notification(
@@ -217,8 +224,11 @@ def scheduler_loop():
         config = load_config()
         interval_minutes = config.getint('SCHEDULER', 'interval_minutes', fallback=15)
         
-        run_main_script()
-        
+        try:
+            run_main_script()
+        except Exception as e:
+            print(f"[Scheduler] Error occurred while running {MAIN_SCRIPT}: {e}")
+
         # Wait for the interval, but check for stop signal every second
         for _ in range(interval_minutes * 60):
             if stop_scheduler_flag.is_set():
@@ -276,12 +286,12 @@ def acquire_token(client_id: str, client_secret: str, tenant: str) -> str:
 
     return access_token
 
-def send_error_notification(subject, HTMLmessage):
+def send_error_notification(subject, HTMLmessage, bypass_cooldown=False):
     """Sends an error notification email using the configured O365 settings."""
 
     global last_error_notification_time
     current_time = time.time()
-    if current_time - last_error_notification_time < ERROR_NOTIFICATION_COOLDOWN:
+    if current_time - last_error_notification_time < ERROR_NOTIFICATION_COOLDOWN and not bypass_cooldown:
         print("[Notification] Skipping error notification email due to cooldown.")
         return
 
@@ -337,6 +347,7 @@ def send_error_notification(subject, HTMLmessage):
         print("[Notification] Error notification email sent.")
     except Exception as e:
         print(f"[Notification] Failed to send error notification email: {e}")
+        pending_error_notifications.append((subject, HTMLmessage))
 
 def log_error_to_json(error_message):
     """Logs an error message to a JSON file with a timestamp, while respecting cooldown and max entries."""
@@ -353,7 +364,7 @@ def log_error_to_json(error_message):
         log_entries = []
 
     # Check cooldown for the last error message
-    if current_time - log_entries[-1]['timestamp'] < ERROR_JSON_LOG_COOLDOWN:
+    if len(log_entries) > 0 and log_entries[-1]['timestamp'] and current_time - log_entries[-1]['timestamp'] < ERROR_JSON_LOG_COOLDOWN:
         print("[JSON Log] Skipping logging to JSON due to cooldown for this error message.")
         return
 
